@@ -17,6 +17,8 @@ describe('loadConfig', () => {
     const config = loadConfig(base);
     expect(config.TWITCH_ENABLED).toBe(false);
     expect(config.OPENAI_MODEL).toBe('gpt-5.4-mini');
+    expect(config.CINDER_VOICE_SOCIAL_MODEL).toBe('gpt-5.4-mini');
+    expect(config.CINDER_VOICE_CONTEXT_EVENT_LIMIT).toBe(6);
     expect(config.DEFAULT_MODERATOR_ROLE_NAME).toBe('Moderator');
     expect(config.DISCORD_VOICE_SILENCE_PADDING_FRAMES).toBe(20);
     expect(config.DISCORD_VOICE_BARGE_IN_GRACE_MS).toBe(450);

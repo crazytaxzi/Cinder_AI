@@ -1010,16 +1010,30 @@ export class Database {
     `);
     const audio = await this.pool.query<{
       period: string; duration_seconds: string; estimated_cost_usd: string;
+      transcription_cost_usd: string; tts_cost_usd: string;
     }>(`
       SELECT periods.period,
              COALESCE(SUM(a.duration_seconds), 0)::text AS duration_seconds,
-             COALESCE(SUM(a.estimated_cost_usd), 0)::text AS estimated_cost_usd
+             COALESCE(SUM(a.estimated_cost_usd), 0)::text AS estimated_cost_usd,
+             COALESCE(SUM(a.estimated_cost_usd) FILTER (WHERE a.platform = 'discord_voice'), 0)::text AS transcription_cost_usd,
+             COALESCE(SUM(a.estimated_cost_usd) FILTER (WHERE a.platform = 'discord_voice_tts'), 0)::text AS tts_cost_usd
       FROM (VALUES ('today', CURRENT_DATE::timestamptz),
                    ('sevenDays', NOW() - INTERVAL '7 days'),
                    ('thirtyDays', NOW() - INTERVAL '30 days'),
                    ('allTime', '-infinity'::timestamptz)) AS periods(period, since)
       LEFT JOIN audio_usage a ON a.occurred_at >= periods.since
       GROUP BY periods.period
+    `);
+    const modelBreakdown = await this.pool.query<{
+      model: string; requests: string; input_tokens: string; cached_input_tokens: string;
+      output_tokens: string; estimated_cost_usd: string;
+    }>(`
+      SELECT model, COUNT(*)::text AS requests,
+             COALESCE(SUM(input_tokens), 0)::text AS input_tokens,
+             COALESCE(SUM(cached_input_tokens), 0)::text AS cached_input_tokens,
+             COALESCE(SUM(output_tokens), 0)::text AS output_tokens,
+             COALESCE(SUM(estimated_cost_usd), 0)::text AS estimated_cost_usd
+      FROM model_usage GROUP BY model ORDER BY SUM(estimated_cost_usd) DESC
     `);
     const audioByPeriod = new Map(audio.rows.map((row) => [row.period, row]));
     const periods = Object.fromEntries(result.rows.map((row) => {
@@ -1034,17 +1048,28 @@ export class Database {
         reasoningTokens: Number(row.reasoning_tokens),
         textModelCostUsd: textCost,
         audioDurationSeconds: Number(audioRow?.duration_seconds ?? 0),
-        audioTranscriptionCostUsd: audioCost,
+        audioTranscriptionCostUsd: Number(audioRow?.transcription_cost_usd ?? 0),
+        audioTtsCostUsd: Number(audioRow?.tts_cost_usd ?? 0),
+        audioCostUsd: audioCost,
         estimatedCostUsd: textCost + audioCost,
       }];
     }));
     return {
       model: this.config.OPENAI_MODEL,
+      voiceModel: this.config.CINDER_VOICE_SOCIAL_MODEL,
       periods,
-      pricing: this.config.OPENAI_MODEL.startsWith('gpt-5.4-mini')
-        ? { inputUsdPerMillion: 0.75, cachedInputUsdPerMillion: 0.075, outputUsdPerMillion: 4.5 }
-        : { inputUsdPerMillion: 2.5, cachedInputUsdPerMillion: 0.25, outputUsdPerMillion: 15 },
-      note: 'Estimated OpenAI cost from recorded text-model usage and cloud voice transcription. Local Piper speech generation has no API cost.',
+      modelBreakdown: modelBreakdown.rows.map((row) => ({
+        model: row.model, requests: Number(row.requests), inputTokens: Number(row.input_tokens),
+        cachedInputTokens: Number(row.cached_input_tokens), outputTokens: Number(row.output_tokens),
+        estimatedCostUsd: Number(row.estimated_cost_usd),
+      })),
+      pricing: {
+        full: { model: this.config.OPENAI_MODEL, inputUsdPerMillion: 0.75, cachedInputUsdPerMillion: 0.075, outputUsdPerMillion: 4.5 },
+        voice: { model: this.config.CINDER_VOICE_SOCIAL_MODEL, inputUsdPerMillion: 0.75, cachedInputUsdPerMillion: 0.075, outputUsdPerMillion: 4.5 },
+        transcriptionUsdPerMinute: this.config.CINDER_VOICE_CLOUD_STT_USD_PER_MINUTE,
+        ttsUsdPerMinute: this.config.CINDER_VOICE_CLOUD_TTS_USD_PER_MINUTE,
+      },
+      note: 'Estimated OpenAI cost from exact recorded model tokens plus measured cloud STT and TTS duration. Deployment self-tests are included. Piper fallback has no API cost.',
     };
   }
 

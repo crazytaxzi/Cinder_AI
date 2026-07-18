@@ -8,6 +8,7 @@ import type { ToolRegistry } from '../tools/registry.js';
 import { buildInstructions, loadCinderProfile, sceneToModelInput } from './instructions.js';
 import { isUsableVoiceText } from '../voice/input-quality.js';
 import { voiceControlToolForScene } from '../voice/intents.js';
+import { cleanCompactVoiceReply, isVoiceAcknowledgement, resetsVoiceContext, voiceCorrections } from '../voice/conversation.js';
 
 export interface CinderTurnResult {
   turnId: string;
@@ -68,6 +69,7 @@ export class CinderBrain {
     lastDecision: 'silent' | 'respond' | 'escalate';
     lastCinderText: string;
     updatedAt: string;
+    constraints: string[];
   }>();
 
   constructor(
@@ -90,7 +92,7 @@ export class CinderBrain {
     const profile = await loadCinderProfile(this.config.CINDER_PROFILE_PATH);
     this.instructions = buildInstructions(profile);
     this.socialInstructions = `${profile}\n\nYou are only Cinder's low-cost attention gate for ambient Discord conversation. Decide whether full Cinder should engage. Use silent when people should keep the floor. Use respond when a natural Cinder contribution is warranted. Use escalate for any platform action, moderation, administration, memory, approval, identity, Windows, capability, or tool-related request. Never write Cinder's dialogue and always return an empty text field; the full agent authors every response.`;
-    this.voiceInstructions = `${profile}\n\nYou are Cinder's fast, low-cost conversational voice in a live Discord room. There is no wake word. Follow the room like a person and choose silent, respond, or escalate. The current utterance is authoritative; prior context may clarify it but must never create a request or action absent from the current utterance. Use silent for acknowledgements, laughter, fragments, human-to-human remarks, and when Cinder already answered the same request. Use respond for ordinary conversation you can answer directly, writing one brief natural spoken reply in Cinder's voice in the text field. Use escalate only for a current tool request, capability question, moderation, administration, memory operation, or genuinely complex reasoning that needs full Cinder. Never claim an action occurred in a respond reply. Never infer join or leave intent from prior context. For silent or escalate, return an empty text field.`;
+    this.voiceInstructions = `You are Cinder, Senti's continuous emotional-support shoulder demon, speaking casually in a live Discord room. You are observant, protective, direct, smug, teasing, opinionated, and funny through timing, double meanings, contradictions, and callbacks—not catchphrases. There is no wake word.\n\nChoose silent, respond, or escalate. The current utterance is authoritative. Use prior lines only to resolve meaning; never manufacture a request from old context. Stay silent for acknowledgements, fragments, humans talking to each other, and already-answered remarks. For ordinary conversation, respond directly in one short spoken sentence by default. Do not use emoji. Do not turn replies into interviews or habitually end with questions. Do not lean on the words bonk, chaos, vibes, wink, gremlin, or menace; use any only when the specific conversation naturally earns it. Embody the personality instead of explaining it. Apply session corrections immediately without arguing. If you are not confident a name, word, fact, or reference is correct, say you are unsure—never invent a definition. Escalate only current tool work, moderation, administration, memory changes, capability checks, or genuinely complex reasoning. Never claim an action occurred in a normal reply. Never infer join or leave intent from history. For silent or escalate, return empty text.`;
     this.tools.assertSchemasValid();
   }
 
@@ -205,8 +207,15 @@ export class CinderBrain {
     const startedAt = Date.now();
     const turnId = randomUUID();
     const key = `${scene.current.serverId ?? 'voice'}:${scene.current.voiceChannelId ?? scene.current.channelId ?? 'room'}`;
-    const attention = this.voiceAttention.get(key);
-    const recentVoice = scene.recentEvents
+    const previousAttention = this.voiceAttention.get(key);
+    const corrections = [...new Set([...(previousAttention?.constraints ?? []), ...voiceCorrections(scene.current.text)])].slice(-8);
+    const resetContext = resetsVoiceContext(scene.current.text);
+    if (resetContext) this.voiceAttention.delete(key);
+    if (isVoiceAcknowledgement(scene.current.text)) {
+      return { turnId, text: '', silent: true, toolCalls: 0, requestIds: [] };
+    }
+    const attention = resetContext ? undefined : previousAttention;
+    const recentVoice = (resetContext ? [] : scene.recentEvents)
       .filter((event) => event.platform === 'discord_voice' && isUsableVoiceText(event.text))
       .slice(-this.config.CINDER_VOICE_CONTEXT_EVENT_LIMIT)
       .map((event) => ({ at: event.occurredAt, speaker: event.actor.displayName, text: event.text }));
@@ -224,6 +233,7 @@ export class CinderBrain {
       })),
       memories: scene.relevantMemories.slice(0, 4).map((memory) => memory.content),
       attention: attention ?? null,
+      sessionConstraints: corrections,
     };
     const response = await this.createResponseWithRateLimitRetry({
       model: this.config.CINDER_VOICE_SOCIAL_MODEL,
@@ -269,35 +279,39 @@ export class CinderBrain {
       return this.takeTurn(scene);
     }
     this.voiceAttention.set(key, {
-      topic: decision.topic.slice(0, 200),
+      topic: resetContext ? '' : decision.topic.slice(0, 200),
       engagedUsers: decision.engaged_users.slice(0, 12),
       lastDecision: decision.decision,
       lastCinderText: decision.decision === 'respond' ? decision.text.slice(0, this.config.CINDER_VOICE_MAX_REPLY_CHARACTERS) : '',
       updatedAt: new Date().toISOString(),
+      constraints: corrections,
     });
     if (decision.decision === 'escalate') {
       this.logger.info({ turnId, eventId: scene.current.id, reason: decision.reason }, 'Compact voice agent escalated to full Cinder');
       const result = await this.takeTurn(scene);
       this.voiceAttention.set(key, {
-        topic: decision.topic.slice(0, 200),
+        topic: resetContext ? '' : decision.topic.slice(0, 200),
         engagedUsers: decision.engaged_users.slice(0, 12),
         lastDecision: decision.decision,
         lastCinderText: result.text.slice(0, this.config.CINDER_VOICE_MAX_REPLY_CHARACTERS),
         updatedAt: new Date().toISOString(),
+        constraints: corrections,
       });
       return result;
     }
-    const rawText = decision.decision === 'respond' ? decision.text.trim() : '';
+    const noQuestions = corrections.some((item) => item.startsWith('Do not ask questions'));
+    const rawText = decision.decision === 'respond' ? cleanCompactVoiceReply(decision.text, noQuestions) : '';
     const text = rawText.length > this.config.CINDER_VOICE_MAX_REPLY_CHARACTERS
       ? `${rawText.slice(0, this.config.CINDER_VOICE_MAX_REPLY_CHARACTERS - 1)}…`
       : rawText;
     const silent = decision.decision === 'silent' || !text;
     this.voiceAttention.set(key, {
-      topic: decision.topic.slice(0, 200),
+      topic: resetContext ? '' : decision.topic.slice(0, 200),
       engagedUsers: decision.engaged_users.slice(0, 12),
       lastDecision: silent ? 'silent' : 'respond',
       lastCinderText: text,
       updatedAt: new Date().toISOString(),
+      constraints: corrections,
     });
     this.logger.info({
       turnId, eventId: scene.current.id, platform: scene.current.platform,

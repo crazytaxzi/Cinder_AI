@@ -52,13 +52,13 @@ upsert_env LOCAL_PIPER_WORKER "$RELEASE/scripts/piper-worker.py"
 upsert_env LOCAL_WHISPER_BINARY /opt/cinder/local-voice/whisper.cpp/build/bin/whisper-cli
 upsert_env LOCAL_WHISPER_MODEL /opt/cinder/local-voice/models/ggml-tiny.en.bin
 upsert_env LOCAL_WHISPER_THREADS 2
-upsert_env CINDER_VOICE_SOCIAL_MODEL gpt-5.4-nano
+upsert_env CINDER_VOICE_SOCIAL_MODEL gpt-5.4-mini
 upsert_env CINDER_SOCIAL_MODEL gpt-5.4-nano
 upsert_env CINDER_SOCIAL_CONTEXT_EVENT_LIMIT 10
 upsert_env CINDER_SOCIAL_MAX_REPLY_CHARACTERS 500
 upsert_env CINDER_VOICE_CLOUD_TRANSCRIPTION true
 upsert_env CINDER_VOICE_CLOUD_STT_USD_PER_MINUTE 0.003
-upsert_env CINDER_VOICE_CONTEXT_EVENT_LIMIT 8
+upsert_env CINDER_VOICE_CONTEXT_EVENT_LIMIT 6
 upsert_env CINDER_VOICE_MAX_REPLY_CHARACTERS 220
 upsert_env CINDER_VOICE_SPEECH_END_MS 550
 upsert_env SCENE_RECENT_EVENT_LIMIT 12

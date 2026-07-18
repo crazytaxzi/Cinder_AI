@@ -73,14 +73,23 @@ function renderUsage(usage) {
     return `<div class="status-card"><span>${escapeHtml(label)}</span><strong>${money(period.estimatedCostUsd)}</strong></div>`;
   }).join('');
   const all = usage.periods.allTime || {};
+  const modelRows = (usage.modelBreakdown || []).map((item) => [
+    `${item.model} recorded`, `${compactNumber(item.requests)} requests · ${money(item.estimatedCostUsd)}`,
+  ]);
   $('#usage-details').innerHTML = [
-    ['Model', usage.model],
+    ['Full cognition model', usage.model],
+    ['Compact voice model', usage.voiceModel],
     ['Requests recorded', compactNumber(all.requests)],
     ['Input tokens', compactNumber(all.inputTokens)],
     ['Cached input tokens', compactNumber(all.cachedInputTokens)],
     ['Output tokens', compactNumber(all.outputTokens)],
     ['Reasoning tokens (included in output)', compactNumber(all.reasoningTokens)],
-    ['Published rates', `$${usage.pricing.inputUsdPerMillion}/M input · $${usage.pricing.cachedInputUsdPerMillion}/M cached · $${usage.pricing.outputUsdPerMillion}/M output`],
+    ['Text-model cost', money(all.textModelCostUsd)],
+    ['Voice transcription cost', money(all.audioTranscriptionCostUsd)],
+    ['Voice synthesis cost', money(all.audioTtsCostUsd)],
+    ['Mini rates', `$${usage.pricing.full.inputUsdPerMillion}/M input · $${usage.pricing.full.cachedInputUsdPerMillion}/M cached · $${usage.pricing.full.outputUsdPerMillion}/M output`],
+    ['STT / TTS rates', `$${usage.pricing.transcriptionUsdPerMinute}/min · $${usage.pricing.ttsUsdPerMinute}/min`],
+    ...modelRows,
   ].map(([label, value]) => `<div class="detail-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
   $('#usage-note').textContent = usage.note || '';
 }

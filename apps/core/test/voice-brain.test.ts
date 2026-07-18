@@ -22,7 +22,7 @@ function voiceEvent(id: string, speaker: string, text: string): EventEnvelope {
 }
 
 describe('compact voice cognition', () => {
-  it('lets nano directly author an ordinary voice response without a full turn', async () => {
+  it('lets compact mini directly author an ordinary voice response without a full turn', async () => {
     let payload: Record<string, unknown> | undefined;
     const usage: Array<{ model: string }> = [];
     const tools = { assertSchemasValid: () => undefined };
@@ -58,10 +58,61 @@ describe('compact voice cognition', () => {
     const result = await brain.takeVoiceTurn(scene);
 
     expect(result.text).toBe('The engines deny everything.');
-    expect(payload?.model).toBe('gpt-5.4-nano');
+    expect(payload?.model).toBe('gpt-5.4-mini');
     expect(JSON.stringify(payload)).not.toContain('enormousSecretTopology');
-    expect(usage).toEqual([{ model: 'gpt-5.4-nano' }]);
+    expect(usage).toEqual([{ model: 'gpt-5.4-mini' }]);
     expect(fullTurns).toBe(0);
+  });
+
+  it('suppresses acknowledgements without spending a model request', async () => {
+    const tools = { assertSchemasValid: () => undefined };
+    const brain = new CinderBrain(config, { warn: () => undefined, info: () => undefined } as never, tools as never);
+    await brain.initialize();
+    let requests = 0;
+    (brain.getOpenAIClient().responses as unknown as { create: () => Promise<unknown> }).create = async () => {
+      requests += 1;
+      throw new Error('Acknowledgements must not reach OpenAI.');
+    };
+    const current = voiceEvent('current', 'Gaia', 'Mhm.');
+    const scene: Scene = {
+      current, recentEvents: [], relevantMemories: [], pendingApprovals: [], recentActions: [], activeVoiceParticipants: [],
+    };
+
+    const result = await brain.takeVoiceTurn(scene);
+
+    expect(result.silent).toBe(true);
+    expect(requests).toBe(0);
+  });
+
+  it('clears stale context and carries explicit session corrections', async () => {
+    let payload: Record<string, unknown> | undefined;
+    const tools = { assertSchemasValid: () => undefined };
+    const brain = new CinderBrain(config, { warn: () => undefined, info: () => undefined } as never, tools as never);
+    await brain.initialize();
+    (brain.getOpenAIClient().responses as unknown as { create: (input: Record<string, unknown>) => Promise<unknown> }).create = async (input) => {
+      payload = input;
+      return {
+        output_text: JSON.stringify({
+          decision: 'respond', text: 'Understood. What now? 😼', topic: 'correction',
+          engaged_users: ['Sentionce'], reason: 'Apply the correction.',
+        }),
+        output: [], usage: { input_tokens: 500, output_tokens: 20 }, _request_id: 'req_voice',
+      };
+    };
+    const current = voiceEvent('current', 'Sentionce', 'Stop asking questions and focus on something else. No emojis.');
+    const scene: Scene = {
+      current,
+      recentEvents: [voiceEvent('previous', 'Cinder', 'Tell me more about your sleep?')],
+      relevantMemories: [], pendingApprovals: [], recentActions: [], activeVoiceParticipants: [],
+    };
+
+    const result = await brain.takeVoiceTurn(scene);
+    const serialized = JSON.stringify(payload);
+
+    expect(serialized).not.toContain('Tell me more about your sleep');
+    expect(serialized).toContain('Never use emoji.');
+    expect(serialized).toContain('Do not ask questions unless essential');
+    expect(result.text).toBe('Understood.');
   });
 
   it('escalates complex and tool-related voice requests to full Cinder', async () => {
