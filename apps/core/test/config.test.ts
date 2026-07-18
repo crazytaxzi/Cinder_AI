@@ -22,7 +22,7 @@ describe('loadConfig', () => {
     expect(config.DISCORD_VOICE_BARGE_IN_GRACE_MS).toBe(450);
     expect(config.CINDER_MAX_TOOL_ROUNDS).toBe(3);
     expect(config.CINDER_MAX_OUTPUT_TOKENS).toBe(600);
-    expect(config.CINDER_VOICE_SPEED).toBe(0.462);
+    expect(config.CINDER_VOICE_SPEED).toBe(0.468);
     expect(config.CINDER_VOICE_PITCH).toBe(0.85896448);
     expect(config.OPENAI_TTS_INSTRUCTIONS).toContain('gravelly');
   });

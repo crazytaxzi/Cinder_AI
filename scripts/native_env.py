@@ -98,7 +98,7 @@ def prepare(args: argparse.Namespace) -> None:
         'CINDER_VOICE_CONTEXT_EVENT_LIMIT': '8',
         'CINDER_VOICE_MAX_REPLY_CHARACTERS': '220',
         'CINDER_VOICE_SPEECH_END_MS': '550',
-        'CINDER_VOICE_SPEED': '0.78',
+        'CINDER_VOICE_SPEED': '0.468',
         'LOCAL_PIPER_WORKER': '/opt/cinder/current/scripts/piper-worker.py',
         'DASHBOARD_ENABLED': 'true',
         'DASHBOARD_SESSION_SECRET': values.get('DASHBOARD_SESSION_SECRET') or secrets.token_urlsafe(48),

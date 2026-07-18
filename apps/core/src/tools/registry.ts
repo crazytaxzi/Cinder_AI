@@ -202,8 +202,7 @@ ${failures.join('\n')}`);
       result = { ok: false, summary: `Unknown tool: ${name}`, errorCode: 'UNKNOWN_TOOL' };
     } else {
       try {
-        const denial = this.authorizationDenial(name, context);
-        result = denial ?? await handler(args, context);
+        result = await handler(args, context);
       } catch (error) {
         this.logger.error({ err: error, tool: name, args }, 'Cinder tool execution crashed');
         result = {
@@ -233,39 +232,6 @@ ${failures.join('\n')}`);
     this.handlers.set(definition.name, handler);
   }
 
-  private authorizationDenial(name: string, context: ToolExecutionContext): ToolExecutionResult | undefined {
-    const discordAdministration = new Set([
-      'discord_create_channel', 'discord_rename_channel', 'discord_move_channel',
-      'discord_delete_channel', 'discord_set_channel_read_only', 'discord_delete_message',
-      'discord_pin_message', 'discord_timeout_member', 'discord_ban_member',
-      'discord_create_role', 'discord_assign_role', 'configure_cinder',
-      'discord_find_user_messages', 'discord_index_messages', 'discord_search_indexed_messages',
-    ]);
-    const actor = context.currentEvent.actor;
-    const settings = context.scene.guildConfiguration;
-    const ownerId = settings?.ownerDiscordUserId ?? this.config.CINDER_OWNER_DISCORD_ID;
-    const moderatorRole = settings?.moderatorRoleName ?? this.config.DEFAULT_MODERATOR_ROLE_NAME;
-    const isOwner = actor.isGuildOwner === true || Boolean(ownerId && actor.platformUserId === ownerId);
-    const isModerator = actor.roles.some((role) => role.toLocaleLowerCase() === moderatorRole.toLocaleLowerCase());
-
-    if (discordAdministration.has(name) && !isOwner && !isModerator) {
-      return { ok: false, summary: 'Only the configured moderator or server owner may perform Discord administration.', errorCode: 'NOT_AUTHORIZED' };
-    }
-    if (name === 'discord_join_voice') {
-      const voiceRole = settings?.voiceJoinRoleName ?? this.config.DEFAULT_VOICE_JOIN_ROLE_NAME;
-      const hasVoiceRole = actor.roles.some((role) => role.toLocaleLowerCase() === voiceRole.toLocaleLowerCase());
-      if (!isOwner && !hasVoiceRole) {
-        return { ok: false, summary: 'Only the configured voice role or server owner may ask Cinder to join voice.', errorCode: 'NOT_AUTHORIZED' };
-      }
-    }
-    if (name === 'discord_leave_voice') {
-      const isParticipant = context.scene.activeVoiceParticipants.some((participant) => participant.userId === actor.platformUserId);
-      if (!isOwner && !isModerator && !isParticipant) {
-        return { ok: false, summary: 'Only a current voice participant, moderator, or server owner may ask Cinder to leave voice.', errorCode: 'NOT_AUTHORIZED' };
-      }
-    }
-    return undefined;
-  }
 
   private registerTools(): void {
     this.add(

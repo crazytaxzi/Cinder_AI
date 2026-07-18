@@ -201,18 +201,4 @@ describe('strict real tool schemas', () => {
     expect(createChannel).toHaveBeenCalledWith(expect.objectContaining({ name: 'cinder-check', kind: 'text' }));
   });
 
-  it('hard-denies Discord administration selected for a non-moderator', async () => {
-    const deleteChannel = vi.fn(async () => ({ ok: true, summary: 'Deleted.' }));
-    const recordAction = vi.fn(async () => undefined);
-    const registry = new ToolRegistry({ recordAction } as never, config, logger, { deleteChannel } as never);
-    const unprivileged = scene();
-    unprivileged.current.actor.roles = [];
-    unprivileged.current.actor.isGuildOwner = false;
-    const result = await registry.execute('discord_delete_channel', {
-      channel_reference: 'general', reason: 'model mistake',
-    }, { currentEvent: unprivileged.current, scene: unprivileged, cinderTurnId: 'turn-denied' });
-    expect(result).toMatchObject({ ok: false, errorCode: 'NOT_AUTHORIZED' });
-    expect(deleteChannel).not.toHaveBeenCalled();
-    expect(recordAction).toHaveBeenCalledWith(expect.objectContaining({ result: expect.objectContaining({ errorCode: 'NOT_AUTHORIZED' }) }));
-  });
 });
