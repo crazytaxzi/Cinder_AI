@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cleanCompactVoiceReply, isVoiceAcknowledgement, resetsVoiceContext, voiceCorrections } from '../src/voice/conversation.js';
+import { forcedDiscordToolForScene } from '../src/voice/intents.js';
+import type { Scene } from '@cinder/shared';
 
 describe('voice conversation controls', () => {
   it.each(['Mhm.', 'Hm', 'uh huh', 'Okay.', 'Gotcha'])('recognizes a pure acknowledgement: %s', (text) => {
@@ -24,5 +26,18 @@ describe('voice conversation controls', () => {
 
   it('removes emoji and drops questions when the session forbids them', () => {
     expect(cleanCompactVoiceReply('Understood. What now? 😼', true)).toBe('Understood.');
+  });
+
+  it('routes explicit role assignments directly to the real role tool', () => {
+    const scene = {
+      current: {
+        id: 'voice-role', platform: 'discord_voice', occurredAt: new Date().toISOString(),
+        actor: { platform: 'discord', platformUserId: 'owner', displayName: 'Sentionce', roles: [], isBot: false },
+        text: 'Cinder, give HighwayHero the Verified and Chief Bonk Officer roles.',
+        mentions: [], attachments: [], metadata: { verified: true },
+      },
+      recentEvents: [], relevantMemories: [], pendingApprovals: [], recentActions: [], activeVoiceParticipants: [],
+    } as Scene;
+    expect(forcedDiscordToolForScene(scene)).toBe('discord_assign_role');
   });
 });

@@ -7,7 +7,7 @@ import type { Logger } from '../config/logger.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import { buildInstructions, loadCinderProfile, sceneToModelInput } from './instructions.js';
 import { isUsableVoiceText } from '../voice/input-quality.js';
-import { voiceControlToolForScene } from '../voice/intents.js';
+import { forcedDiscordToolForScene } from '../voice/intents.js';
 import { cleanCompactVoiceReply, isVoiceAcknowledgement, resetsVoiceContext, voiceCorrections } from '../voice/conversation.js';
 
 export interface CinderTurnResult {
@@ -433,8 +433,8 @@ export class CinderBrain {
     }).catch((error) => this.logger.warn({ err: error, requestId, turnId }, 'Failed to record model usage'));
   }
 
-  private forcedVoiceTool(scene: Scene): 'discord_join_voice' | 'discord_leave_voice' | undefined {
-    return voiceControlToolForScene(scene);
+  private forcedVoiceTool(scene: Scene): 'discord_join_voice' | 'discord_leave_voice' | 'discord_assign_role' | undefined {
+    return forcedDiscordToolForScene(scene);
   }
 
   private async createResponseWithRateLimitRetry(

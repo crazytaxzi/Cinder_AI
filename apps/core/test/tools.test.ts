@@ -33,6 +33,19 @@ describe('ToolRegistry', () => {
     expect(names).toContain('request_approval');
   });
 
+  it('gives an escalated voice turn real action tools while gating voice connection controls', () => {
+    const tools = new ToolRegistry({ recordAction: async () => undefined } as never, config, { error: () => undefined } as never, {} as never);
+    const voiceScene = {
+      ...scene,
+      current: { ...current, platform: 'discord_voice', text: 'Give HighwayHero the Verified role.', metadata: { verified: true } },
+    } as Scene;
+    const names = tools.definitionsForScene(voiceScene).map((tool) => tool.name);
+    expect(names).toContain('discord_assign_role');
+    expect(names).toContain('discord_create_channel');
+    expect(names).not.toContain('discord_join_voice');
+    expect(names).not.toContain('discord_leave_voice');
+  });
+
   it('keeps approval IDs internal instead of making humans copy them', async () => {
     let sent = '';
     const database = {

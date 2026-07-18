@@ -131,9 +131,9 @@ export class ToolRegistry {
           || definition.name === voiceIntent)
         .map((definition) => structuredClone(definition));
     }
-    const voiceTools = new Set(['stay_silent', 'remember', 'forget_memory', ...(voiceIntent ? [voiceIntent] : [])]);
     return this.toolDefinitions
-      .filter((definition) => voiceTools.has(definition.name))
+      .filter((definition) => definition.name !== 'discord_join_voice' && definition.name !== 'discord_leave_voice'
+        || definition.name === voiceIntent)
       .map((definition) => structuredClone(definition));
   }
 
