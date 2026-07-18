@@ -90,7 +90,7 @@ export class CinderBrain {
     const profile = await loadCinderProfile(this.config.CINDER_PROFILE_PATH);
     this.instructions = buildInstructions(profile);
     this.socialInstructions = `${profile}\n\nYou are only Cinder's low-cost attention gate for ambient Discord conversation. Decide whether full Cinder should engage. Use silent when people should keep the floor. Use respond when a natural Cinder contribution is warranted. Use escalate for any platform action, moderation, administration, memory, approval, identity, Windows, capability, or tool-related request. Never write Cinder's dialogue and always return an empty text field; the full agent authors every response.`;
-    this.voiceInstructions = `${profile}\n\nYou are only Cinder's low-cost attention gate in a live Discord voice room. There is no wake word. Follow the room like a person and decide whether full Cinder should engage, but do not author his dialogue. The current utterance is authoritative; prior context may clarify it but must never create a request or action that is absent from the current utterance. Use silent for acknowledgements, laughter, fragments, human-to-human remarks, and when Cinder has already answered the same request. Use respond only when a fresh natural contribution from Cinder is clearly warranted. Use escalate for a current tool request, capability question, moderation, administration, memory, or complex reasoning. Never infer join or leave intent from prior context. Always return an empty text field; the full agent authors every spoken response.`;
+    this.voiceInstructions = `${profile}\n\nYou are Cinder's fast, low-cost conversational voice in a live Discord room. There is no wake word. Follow the room like a person and choose silent, respond, or escalate. The current utterance is authoritative; prior context may clarify it but must never create a request or action absent from the current utterance. Use silent for acknowledgements, laughter, fragments, human-to-human remarks, and when Cinder already answered the same request. Use respond for ordinary conversation you can answer directly, writing one brief natural spoken reply in Cinder's voice in the text field. Use escalate only for a current tool request, capability question, moderation, administration, memory operation, or genuinely complex reasoning that needs full Cinder. Never claim an action occurred in a respond reply. Never infer join or leave intent from prior context. For silent or escalate, return an empty text field.`;
     this.tools.assertSchemasValid();
   }
 
@@ -275,8 +275,8 @@ export class CinderBrain {
       lastCinderText: decision.decision === 'respond' ? decision.text.slice(0, this.config.CINDER_VOICE_MAX_REPLY_CHARACTERS) : '',
       updatedAt: new Date().toISOString(),
     });
-    if (decision.decision !== 'silent') {
-      this.logger.info({ turnId, eventId: scene.current.id, decision: decision.decision, reason: decision.reason }, 'Voice attention gate engaged full Cinder agent');
+    if (decision.decision === 'escalate') {
+      this.logger.info({ turnId, eventId: scene.current.id, reason: decision.reason }, 'Compact voice agent escalated to full Cinder');
       const result = await this.takeTurn(scene);
       this.voiceAttention.set(key, {
         topic: decision.topic.slice(0, 200),
@@ -287,18 +287,29 @@ export class CinderBrain {
       });
       return result;
     }
-    const text = '';
+    const rawText = decision.decision === 'respond' ? decision.text.trim() : '';
+    const text = rawText.length > this.config.CINDER_VOICE_MAX_REPLY_CHARACTERS
+      ? `${rawText.slice(0, this.config.CINDER_VOICE_MAX_REPLY_CHARACTERS - 1)}…`
+      : rawText;
+    const silent = decision.decision === 'silent' || !text;
+    this.voiceAttention.set(key, {
+      topic: decision.topic.slice(0, 200),
+      engagedUsers: decision.engaged_users.slice(0, 12),
+      lastDecision: silent ? 'silent' : 'respond',
+      lastCinderText: text,
+      updatedAt: new Date().toISOString(),
+    });
     this.logger.info({
       turnId, eventId: scene.current.id, platform: scene.current.platform,
-      silent: decision.decision === 'silent', toolCalls: 0,
+      silent, toolCalls: 0,
       requestIds: requestId ? [requestId] : [], responseLength: text.length,
       elapsedMs: Date.now() - startedAt, voiceSocialModel: this.config.CINDER_VOICE_SOCIAL_MODEL,
       topic: decision.topic,
-    }, 'Cinder completed compact voice attention turn');
+    }, 'Cinder completed compact one-call voice turn');
     return {
       turnId,
       text,
-      silent: decision.decision === 'silent',
+      silent,
       toolCalls: 0,
       requestIds: requestId ? [requestId] : [],
     };

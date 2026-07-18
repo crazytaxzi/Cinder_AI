@@ -22,7 +22,7 @@ function voiceEvent(id: string, speaker: string, text: string): EventEnvelope {
 }
 
 describe('compact voice cognition', () => {
-  it('uses nano only for attention and lets full Cinder author the response', async () => {
+  it('lets nano directly author an ordinary voice response without a full turn', async () => {
     let payload: Record<string, unknown> | undefined;
     const usage: Array<{ model: string }> = [];
     const tools = { assertSchemasValid: () => undefined };
@@ -61,6 +61,34 @@ describe('compact voice cognition', () => {
     expect(payload?.model).toBe('gpt-5.4-nano');
     expect(JSON.stringify(payload)).not.toContain('enormousSecretTopology');
     expect(usage).toEqual([{ model: 'gpt-5.4-nano' }]);
+    expect(fullTurns).toBe(0);
+  });
+
+  it('escalates complex and tool-related voice requests to full Cinder', async () => {
+    const tools = { assertSchemasValid: () => undefined };
+    const brain = new CinderBrain(config, { warn: () => undefined, info: () => undefined } as never, tools as never);
+    await brain.initialize();
+    let fullTurns = 0;
+    brain.takeTurn = async () => {
+      fullTurns += 1;
+      return { turnId: 'full', text: 'I will check that.', silent: false, toolCalls: 1, requestIds: ['req_full'] };
+    };
+    (brain.getOpenAIClient().responses as unknown as { create: () => Promise<unknown> }).create = async () => ({
+      output_text: JSON.stringify({
+        decision: 'escalate', text: '', topic: 'moderation', engaged_users: ['Sera'],
+        reason: 'The current request needs a moderation tool.',
+      }),
+      output: [], usage: { input_tokens: 500, output_tokens: 20 }, _request_id: 'req_voice',
+    });
+    const current = voiceEvent('current', 'Sera', 'Cinder, check whether that user needs a timeout.');
+    const scene: Scene = {
+      current, recentEvents: [], relevantMemories: [], pendingApprovals: [], recentActions: [],
+      activeVoiceParticipants: [],
+    };
+
+    const result = await brain.takeVoiceTurn(scene);
+
+    expect(result.text).toBe('I will check that.');
     expect(fullTurns).toBe(1);
   });
 });
