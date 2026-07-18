@@ -189,10 +189,14 @@ export class CinderBrain {
       scene,
       instructions: this.instructions,
       initialInput: [{ role: 'user', content }],
+      ...(this.forcedVoiceTool(scene)
+        ? { firstToolChoice: { type: 'function', name: this.forcedVoiceTool(scene) } }
+        : {}),
     });
   }
 
   async takeVoiceTurn(scene: Scene): Promise<CinderTurnResult> {
+    if (this.forcedVoiceTool(scene)) return this.takeTurn(scene);
     const startedAt = Date.now();
     const turnId = randomUUID();
     const key = `${scene.current.serverId ?? 'voice'}:${scene.current.voiceChannelId ?? scene.current.channelId ?? 'room'}`;
@@ -294,6 +298,7 @@ export class CinderBrain {
 
   async takeSocialTurn(scene: Scene): Promise<CinderTurnResult> {
     if (scene.current.metadata.urgentModeration === true) return this.takeTurn(scene);
+    if (this.forcedVoiceTool(scene)) return this.takeTurn(scene);
     if (
       scene.current.platform === 'twitch_chat'
       || scene.current.metadata.directMention === true
@@ -393,6 +398,19 @@ export class CinderBrain {
       outputTokens: usage.output_tokens ?? 0,
       reasoningTokens: usage.output_tokens_details?.reasoning_tokens ?? 0,
     }).catch((error) => this.logger.warn({ err: error, requestId, turnId }, 'Failed to record model usage'));
+  }
+
+  private forcedVoiceTool(scene: Scene): 'discord_join_voice' | 'discord_leave_voice' | undefined {
+    if (scene.current.platform !== 'discord_text' && scene.current.platform !== 'discord_voice') return undefined;
+    if (scene.current.metadata.verified !== true) return undefined;
+    const text = scene.current.text.toLocaleLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const leave = /\b(?:leave|exit|disconnect|drop|bounce)\b.{0,32}\b(?:voice|vc)\b/.test(text)
+      || /\b(?:voice|vc)\b.{0,32}\b(?:leave|exit|disconnect)\b/.test(text)
+      || (scene.current.platform === 'discord_voice' && /\b(?:you can|cinder|go ahead)\b.{0,24}\bleave\b/.test(text));
+    if (leave) return 'discord_leave_voice';
+    const join = /\b(?:join|enter|connect|hop)\b.{0,40}\b(?:voice|vc|lobby)\b/.test(text)
+      || /\b(?:voice|vc|lobby)\b.{0,40}\b(?:join|enter|connect)\b/.test(text);
+    return join ? 'discord_join_voice' : undefined;
   }
 
   private async createResponseWithRateLimitRetry(

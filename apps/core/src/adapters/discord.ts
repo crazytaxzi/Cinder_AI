@@ -741,7 +741,8 @@ export class DiscordAdapter implements DiscordToolPort, SceneStateProvider {
         messageId: message.id,
         messageRef: `discord:message:${message.id}`,
         cinderUserId: this.client.user?.id,
-        directMention: this.client.user ? message.mentions.has(this.client.user) : false,
+        directMention: (this.client.user ? message.mentions.has(this.client.user) : false)
+          || /(?:^|\W)cinder(?:_ai)?(?:\W|$)/i.test(message.content),
         replyToCinder: replyTo?.authorId === this.client.user?.id,
         authorUserRef: `discord:user:${message.author.id}`,
         channelRef: `discord:channel:${message.channelId}`,
