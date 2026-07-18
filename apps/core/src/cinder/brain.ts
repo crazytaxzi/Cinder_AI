@@ -87,8 +87,8 @@ export class CinderBrain {
   async initialize(): Promise<void> {
     const profile = await loadCinderProfile(this.config.CINDER_PROFILE_PATH);
     this.instructions = buildInstructions(profile);
-    this.socialInstructions = `${profile}\n\nYou are observing a live Discord or Twitch conversational beat. Return the required structured decision. Use respond for normal conversation, silent when people should keep the floor, and escalate for any platform action, moderation concern, administration, memory operation, approval, identity linking, Windows action, or a request that needs the full agent and tools. Twitch is strict: respond only when clearly addressed/replied to or for a genuine conduct issue. Never claim an action was performed in this social pass. Keep text under ${this.config.CINDER_SOCIAL_MAX_REPLY_CHARACTERS} characters.`;
-    this.voiceInstructions = `${profile}\n\nYou are present in a live Discord voice room. There is no wake word. Read the room like a person: follow the conversation, notice indirect continuations and references to your earlier words, but do not interrupt merely because you can answer. Return the required structured decision. Use respond for a short natural spoken contribution, silent when the humans should keep the floor, and escalate only for administration, moderation, memory/tool work, or a genuinely complex request requiring the full agent. Keep spoken text under ${this.config.CINDER_VOICE_MAX_REPLY_CHARACTERS} characters.`;
+    this.socialInstructions = `${profile}\n\nYou are only Cinder's low-cost attention gate for ambient Discord conversation. Decide whether full Cinder should engage. Use silent when people should keep the floor. Use respond when a natural Cinder contribution is warranted. Use escalate for any platform action, moderation, administration, memory, approval, identity, Windows, capability, or tool-related request. Never write Cinder's dialogue and always return an empty text field; the full agent authors every response.`;
+    this.voiceInstructions = `${profile}\n\nYou are only Cinder's low-cost attention gate in a live Discord voice room. There is no wake word. Follow the room like a person and decide whether full Cinder should engage, but do not author his dialogue. Use silent when humans should keep the floor, respond when a natural contribution is warranted, and escalate for tool work, capability questions, moderation, administration, memory, or complex reasoning. Always return an empty text field; the full agent authors every spoken response.`;
     this.tools.assertSchemasValid();
   }
 
@@ -263,13 +263,19 @@ export class CinderBrain {
       lastCinderText: decision.decision === 'respond' ? decision.text.slice(0, this.config.CINDER_VOICE_MAX_REPLY_CHARACTERS) : '',
       updatedAt: new Date().toISOString(),
     });
-    if (decision.decision === 'escalate') {
-      this.logger.info({ turnId, eventId: scene.current.id, reason: decision.reason }, 'Voice social turn escalated to full Cinder agent');
-      return this.takeTurn(scene);
+    if (decision.decision !== 'silent') {
+      this.logger.info({ turnId, eventId: scene.current.id, decision: decision.decision, reason: decision.reason }, 'Voice attention gate engaged full Cinder agent');
+      const result = await this.takeTurn(scene);
+      this.voiceAttention.set(key, {
+        topic: decision.topic.slice(0, 200),
+        engagedUsers: decision.engaged_users.slice(0, 12),
+        lastDecision: decision.decision,
+        lastCinderText: result.text.slice(0, this.config.CINDER_VOICE_MAX_REPLY_CHARACTERS),
+        updatedAt: new Date().toISOString(),
+      });
+      return result;
     }
-    const text = decision.decision === 'respond'
-      ? decision.text.trim().slice(0, this.config.CINDER_VOICE_MAX_REPLY_CHARACTERS)
-      : '';
+    const text = '';
     this.logger.info({
       turnId, eventId: scene.current.id, platform: scene.current.platform,
       silent: decision.decision === 'silent', toolCalls: 0,
@@ -288,6 +294,11 @@ export class CinderBrain {
 
   async takeSocialTurn(scene: Scene): Promise<CinderTurnResult> {
     if (scene.current.metadata.urgentModeration === true) return this.takeTurn(scene);
+    if (
+      scene.current.platform === 'twitch_chat'
+      || scene.current.metadata.directMention === true
+      || scene.current.metadata.replyToCinder === true
+    ) return this.takeTurn(scene);
     const startedAt = Date.now();
     const turnId = randomUUID();
     const recent = scene.recentEvents
@@ -349,13 +360,11 @@ export class CinderBrain {
       this.logger.warn({ err: error, turnId, output: response.output_text }, 'Social attention response was invalid; escalating safely');
       return this.takeTurn(scene);
     }
-    if (decision.decision === 'escalate') {
-      this.logger.info({ turnId, eventId: scene.current.id, reason: decision.reason }, 'Social turn escalated to full Cinder agent');
+    if (decision.decision !== 'silent') {
+      this.logger.info({ turnId, eventId: scene.current.id, decision: decision.decision, reason: decision.reason }, 'Social attention gate engaged full Cinder agent');
       return this.takeTurn(scene);
     }
-    const text = decision.decision === 'respond'
-      ? decision.text.trim().slice(0, this.config.CINDER_SOCIAL_MAX_REPLY_CHARACTERS)
-      : '';
+    const text = '';
     this.logger.info({
       turnId, eventId: scene.current.id, platform: scene.current.platform,
       silent: decision.decision === 'silent', toolCalls: 0,

@@ -22,7 +22,7 @@ function voiceEvent(id: string, speaker: string, text: string): EventEnvelope {
 }
 
 describe('compact voice cognition', () => {
-  it('uses the nano social model and excludes full server topology', async () => {
+  it('uses nano only for attention and lets full Cinder author the response', async () => {
     let payload: Record<string, unknown> | undefined;
     const usage: Array<{ model: string }> = [];
     const tools = { assertSchemasValid: () => undefined };
@@ -30,6 +30,11 @@ describe('compact voice cognition', () => {
       recordModelUsage: async (input) => { usage.push({ model: input.model }); },
     });
     await brain.initialize();
+    let fullTurns = 0;
+    brain.takeTurn = async () => {
+      fullTurns += 1;
+      return { turnId: 'full', text: 'The engines deny everything.', silent: false, toolCalls: 0, requestIds: ['req_full'] };
+    };
     const fakeResponse = {
       output_text: JSON.stringify({
         decision: 'respond', text: 'The engines deny everything.', topic: 'engines',
@@ -56,5 +61,6 @@ describe('compact voice cognition', () => {
     expect(payload?.model).toBe('gpt-5.4-nano');
     expect(JSON.stringify(payload)).not.toContain('enormousSecretTopology');
     expect(usage).toEqual([{ model: 'gpt-5.4-nano' }]);
+    expect(fullTurns).toBe(1);
   });
 });
