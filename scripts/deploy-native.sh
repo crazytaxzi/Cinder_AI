@@ -42,7 +42,7 @@ upsert_env OPENAI_MODEL gpt-5.4-mini
 upsert_env OPENAI_REASONING_EFFORT none
 upsert_env OPENAI_TTS_INSTRUCTIONS 'A small mischievous imp with a lightly gravelly, raspy texture: smug, playful, crisp, and expressive. Keep the rasp subtle so every word stays clear. Never sound corporate.'
 upsert_env CINDER_VOICE_SPEED 0.468
-upsert_env CINDER_VOICE_PITCH 0.85896448
+upsert_env CINDER_VOICE_PITCH 0.4981994
 upsert_env LOCAL_PIPER_PYTHON /opt/cinder/local-voice/piper-venv/bin/python
 upsert_env LOCAL_PIPER_MODEL /opt/cinder/local-voice/models/en_US-ryan-medium.onnx
 upsert_env LOCAL_PIPER_WORKER "$RELEASE/scripts/piper-worker.py"

@@ -23,7 +23,7 @@ describe('loadConfig', () => {
     expect(config.CINDER_MAX_TOOL_ROUNDS).toBe(3);
     expect(config.CINDER_MAX_OUTPUT_TOKENS).toBe(600);
     expect(config.CINDER_VOICE_SPEED).toBe(0.468);
-    expect(config.CINDER_VOICE_PITCH).toBe(0.85896448);
+    expect(config.CINDER_VOICE_PITCH).toBe(0.4981994);
     expect(config.OPENAI_TTS_INSTRUCTIONS).toContain('gravelly');
   });
 

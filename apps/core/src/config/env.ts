@@ -39,7 +39,7 @@ const schema = z.object({
   OPENAI_TTS_VOICE: z.string().default('ash'),
   OPENAI_TTS_INSTRUCTIONS: z.string().default('A small mischievous imp with a lightly gravelly, raspy texture: smug, playful, crisp, and expressive. Keep the rasp subtle so every word stays clear. Never sound corporate.'),
   CINDER_VOICE_SPEED: z.coerce.number().min(0.25).max(2).default(0.468),
-  CINDER_VOICE_PITCH: z.coerce.number().min(0.5).max(2).default(0.85896448),
+  CINDER_VOICE_PITCH: z.coerce.number().min(0.25).max(2).default(0.4981994),
   LOCAL_PIPER_PYTHON: z.string().default('/opt/cinder/local-voice/piper-venv/bin/python'),
   LOCAL_PIPER_MODEL: z.string().default('/opt/cinder/local-voice/models/en_US-ryan-medium.onnx'),
   LOCAL_PIPER_WORKER: z.string().default('scripts/piper-worker.py'),
