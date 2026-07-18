@@ -68,7 +68,12 @@ export function wavDurationSeconds(wav: Buffer): number | undefined {
   while (offset + 8 <= wav.length) {
     const name = wav.toString('ascii', offset, offset + 4);
     const size = wav.readUInt32LE(offset + 4);
-    if (name === 'data') return size / byteRate;
+    if (name === 'data') {
+      // Streaming WAV responses commonly use 0xFFFFFFFF as an unknown data
+      // length. The bytes actually present in the response are authoritative.
+      const available = Math.max(0, wav.length - (offset + 8));
+      return Math.min(size, available) / byteRate;
+    }
     offset += 8 + size + (size % 2);
   }
   return undefined;
@@ -229,7 +234,11 @@ export class VoiceManager {
       try {
         audio = await this.synthesizeWithOpenAI(text);
         synthesisSource = 'cloud';
-        const durationSeconds = wavDurationSeconds(audio) ?? Math.max(0.5, text.length / 15);
+        const measuredDuration = wavDurationSeconds(audio);
+        const plausibleMaximum = Math.max(30, text.length / 3);
+        const durationSeconds = measuredDuration !== undefined && measuredDuration <= plausibleMaximum
+          ? measuredDuration
+          : Math.max(0.5, text.length / 15);
         await this.audioUsageRecorder?.recordAudioUsage({
           model: this.config.OPENAI_TTS_MODEL,
           durationSeconds,

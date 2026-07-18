@@ -17,4 +17,10 @@ describe('pcmToWav', () => {
     const wav = pcmToWav(Buffer.alloc(48_000 * 2 * 2));
     expect(wavDurationSeconds(wav)).toBe(1);
   });
+
+  it('uses actual bytes when a streaming WAV declares an unknown data size', () => {
+    const wav = pcmToWav(Buffer.alloc(48_000 * 2 * 2));
+    wav.writeUInt32LE(0xFFFFFFFF, 40);
+    expect(wavDurationSeconds(wav)).toBe(1);
+  });
 });
