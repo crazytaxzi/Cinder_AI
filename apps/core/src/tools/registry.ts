@@ -8,6 +8,7 @@ import type {
   ToolExecutionResult,
 } from '@cinder/shared';
 import type { Config } from '../config/env.js';
+import { voiceControlToolForScene } from '../voice/intents.js';
 import type { Logger } from '../config/logger.js';
 import type { Database } from '../db/database.js';
 import type { BridgeToolPort, DiscordToolPort, TwitchToolPort } from './ports.js';
@@ -123,8 +124,14 @@ export class ToolRegistry {
   }
 
   definitionsForScene(scene: Scene): ToolDefinition[] {
-    if (scene.current.platform !== 'discord_voice') return this.definitions();
-    const voiceTools = new Set(['stay_silent', 'discord_leave_voice', 'remember', 'forget_memory']);
+    const voiceIntent = voiceControlToolForScene(scene);
+    if (scene.current.platform !== 'discord_voice') {
+      return this.toolDefinitions
+        .filter((definition) => definition.name !== 'discord_join_voice' && definition.name !== 'discord_leave_voice'
+          || definition.name === voiceIntent)
+        .map((definition) => structuredClone(definition));
+    }
+    const voiceTools = new Set(['stay_silent', 'remember', 'forget_memory', ...(voiceIntent ? [voiceIntent] : [])]);
     return this.toolDefinitions
       .filter((definition) => voiceTools.has(definition.name))
       .map((definition) => structuredClone(definition));

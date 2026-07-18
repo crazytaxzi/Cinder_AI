@@ -179,6 +179,13 @@ export class CinderRuntime {
     return this.queue.enqueue(event.id, priority, async () => {
       try {
         const scene = await this.assembler.assemble(event, ephemeralRecent);
+        if (event.platform === 'discord_voice' && scene.platformState?.voiceConnected === false) {
+          this.logger.info({ eventId: event.id }, 'Discarded a queued voice event after Cinder left the voice session');
+          return {
+            eventId: event.id, turnId: 'voice-session-ended', text: '', silent: true,
+            toolCalls: 0, requestIds: [], delivered: false,
+          };
+        }
         const result = event.platform === 'discord_voice'
           ? await this.brain.takeVoiceTurn(scene)
           : event.platform === 'discord_text' || event.platform === 'twitch_chat' || event.platform === 'twitch_event'

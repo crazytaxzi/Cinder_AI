@@ -102,7 +102,7 @@ export interface Scene {
   pendingApprovals: PendingApproval[];
   recentActions: ActionRecord[];
   guildConfiguration?: GuildConfiguration;
-  activeVoiceParticipants: Array<{ userId: string; displayName: string; speaking: boolean }>;
+  activeVoiceParticipants: Array<{ userId: string; displayName: string; speaking: boolean; roles?: string[] }>;
   serverSnapshot?: Record<string, unknown>;
   platformState?: Record<string, unknown>;
 }

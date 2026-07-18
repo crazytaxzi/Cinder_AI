@@ -214,6 +214,7 @@ export class DiscordAdapter implements DiscordToolPort, SceneStateProvider {
     return {
       platform: 'discord',
       connected: this.isReady(),
+      voiceConnected: this.voice.isActive(event.serverId),
       voiceParticipants: this.voice.activeParticipants(event.serverId),
     };
   }

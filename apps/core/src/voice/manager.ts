@@ -32,6 +32,7 @@ import type { EventEnvelope, ToolExecutionResult } from '@cinder/shared';
 import type { Config } from '../config/env.js';
 import type { Logger } from '../config/logger.js';
 import { pcmToWav } from './wav.js';
+import { pcmHasSpeechEnergy, sanitizeVoiceTranscript } from './input-quality.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -88,7 +89,7 @@ export class VoiceManager {
     });
   }
 
-  activeParticipants(serverId?: string): Array<{ userId: string; displayName: string; speaking: boolean }> {
+  activeParticipants(serverId?: string): Array<{ userId: string; displayName: string; speaking: boolean; roles: string[] }> {
     if (!serverId) return [];
     const session = this.sessions.get(serverId);
     const guild = this.client.guilds.cache.get(serverId);
@@ -102,7 +103,12 @@ export class VoiceManager {
         userId: member.id,
         displayName: member.displayName,
         speaking: session.speakingUsers.has(member.id),
+        roles: member.roles.cache.filter((role) => role.id !== guild.id).map((role) => role.name),
       }));
+  }
+
+  isActive(serverId?: string): boolean {
+    return Boolean(serverId && this.sessions.has(serverId));
   }
 
   async join(guild: Guild, channel: VoiceBasedChannel): Promise<ToolExecutionResult> {
@@ -337,16 +343,22 @@ export class VoiceManager {
 
       opusStream.pipe(decoder);
       await completion;
-      if (total < 3_840) return;
+      const pcm = Buffer.concat(chunks);
+      if (!pcmHasSpeechEnergy(pcm)) {
+        this.logger.debug({ guildId: guild.id, userId, total }, 'Discarded silence or a receiver noise fragment before transcription');
+        return;
+      }
 
-      const wav = pcmToWav(Buffer.concat(chunks));
+      const wav = pcmToWav(pcm);
       const durationSeconds = total / (48_000 * 2 * 2);
       const transcriptionStartedAt = Date.now();
       let transcriptionSource: 'cloud' | 'local' = 'local';
       let text = '';
+      let cloudFailed = false;
       if (this.config.CINDER_VOICE_CLOUD_TRANSCRIPTION) {
         try {
-          text = await this.transcribeWithOpenAI(wav, guild);
+          const rawText = await this.transcribeWithOpenAI(wav);
+          text = sanitizeVoiceTranscript(rawText) ?? '';
           transcriptionSource = 'cloud';
           await this.audioUsageRecorder?.recordAudioUsage({
             model: this.config.OPENAI_TRANSCRIBE_MODEL,
@@ -354,15 +366,23 @@ export class VoiceManager {
             estimatedCostUsd: durationSeconds / 60 * this.config.CINDER_VOICE_CLOUD_STT_USD_PER_MINUTE,
             platform: 'discord_voice',
           }).catch((error) => this.logger.warn({ err: error }, 'Failed to record voice transcription usage'));
+          if (!text) {
+            this.logger.warn({ guildId: guild.id, userId, rawText }, 'Discarded an invalid or prompt-leaking cloud voice transcript');
+            return;
+          }
         } catch (error) {
+          cloudFailed = true;
           this.logger.warn({ err: error, guildId: guild.id, userId }, 'Cloud voice transcription failed; using local fallback');
         }
       }
-      if (!text) {
-        text = await this.transcribeLocally(wav);
+      if (!this.config.CINDER_VOICE_CLOUD_TRANSCRIPTION || cloudFailed) {
+        text = sanitizeVoiceTranscript(await this.transcribeLocally(wav)) ?? '';
         transcriptionSource = 'local';
       }
       if (!text) return;
+
+      // A leave/reconnect may have invalidated this receiver while STT was in flight.
+      if (this.sessions.get(guild.id) !== session) return;
 
       this.logger.info({
         guildId: guild.id, userId, transcriptionSource, durationSeconds,
@@ -376,18 +396,12 @@ export class VoiceManager {
     }
   }
 
-  private async transcribeWithOpenAI(wav: Buffer, guild: Guild): Promise<string> {
-    const vocabulary = [...guild.members.cache.values()]
-      .filter((member) => !member.user.bot)
-      .slice(0, 80)
-      .map((member) => member.displayName)
-      .join(', ');
+  private async transcribeWithOpenAI(wav: Buffer): Promise<string> {
     const result = await this.openai.audio.transcriptions.create({
       file: await toFile(wav, 'discord-voice.wav', { type: 'audio/wav' }),
       model: this.config.OPENAI_TRANSCRIBE_MODEL,
       language: 'en',
       response_format: 'json',
-      prompt: `Discord voice conversation. Cinder is a participant. Participant names may include: ${vocabulary}`.slice(0, 900),
     });
     return result.text.trim();
   }
@@ -451,10 +465,12 @@ export class VoiceManager {
       mentions: [],
       attachments: [],
       metadata: {
+        verified: true,
         source: 'discord_voice_receiver',
         speakerUserId: member.id,
         speakerDisplayName: member.displayName,
         transcriptionSource,
+        transcriptionAccepted: true,
         overlapAtStart: session.speakingUsers.size > 1,
       },
     };

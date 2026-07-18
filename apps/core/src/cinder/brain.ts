@@ -6,6 +6,8 @@ import type { Config } from '../config/env.js';
 import type { Logger } from '../config/logger.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import { buildInstructions, loadCinderProfile, sceneToModelInput } from './instructions.js';
+import { isUsableVoiceText } from '../voice/input-quality.js';
+import { voiceControlToolForScene } from '../voice/intents.js';
 
 export interface CinderTurnResult {
   turnId: string;
@@ -88,7 +90,7 @@ export class CinderBrain {
     const profile = await loadCinderProfile(this.config.CINDER_PROFILE_PATH);
     this.instructions = buildInstructions(profile);
     this.socialInstructions = `${profile}\n\nYou are only Cinder's low-cost attention gate for ambient Discord conversation. Decide whether full Cinder should engage. Use silent when people should keep the floor. Use respond when a natural Cinder contribution is warranted. Use escalate for any platform action, moderation, administration, memory, approval, identity, Windows, capability, or tool-related request. Never write Cinder's dialogue and always return an empty text field; the full agent authors every response.`;
-    this.voiceInstructions = `${profile}\n\nYou are only Cinder's low-cost attention gate in a live Discord voice room. There is no wake word. Follow the room like a person and decide whether full Cinder should engage, but do not author his dialogue. Use silent when humans should keep the floor, respond when a natural contribution is warranted, and escalate for tool work, capability questions, moderation, administration, memory, or complex reasoning. Always return an empty text field; the full agent authors every spoken response.`;
+    this.voiceInstructions = `${profile}\n\nYou are only Cinder's low-cost attention gate in a live Discord voice room. There is no wake word. Follow the room like a person and decide whether full Cinder should engage, but do not author his dialogue. The current utterance is authoritative; prior context may clarify it but must never create a request or action that is absent from the current utterance. Use silent for acknowledgements, laughter, fragments, human-to-human remarks, and when Cinder has already answered the same request. Use respond only when a fresh natural contribution from Cinder is clearly warranted. Use escalate for a current tool request, capability question, moderation, administration, memory, or complex reasoning. Never infer join or leave intent from prior context. Always return an empty text field; the full agent authors every spoken response.`;
     this.tools.assertSchemasValid();
   }
 
@@ -197,12 +199,15 @@ export class CinderBrain {
 
   async takeVoiceTurn(scene: Scene): Promise<CinderTurnResult> {
     if (this.forcedVoiceTool(scene)) return this.takeTurn(scene);
+    if (!isUsableVoiceText(scene.current.text)) {
+      return { turnId: randomUUID(), text: '', silent: true, toolCalls: 0, requestIds: [] };
+    }
     const startedAt = Date.now();
     const turnId = randomUUID();
     const key = `${scene.current.serverId ?? 'voice'}:${scene.current.voiceChannelId ?? scene.current.channelId ?? 'room'}`;
     const attention = this.voiceAttention.get(key);
     const recentVoice = scene.recentEvents
-      .filter((event) => event.platform === 'discord_voice')
+      .filter((event) => event.platform === 'discord_voice' && isUsableVoiceText(event.text))
       .slice(-this.config.CINDER_VOICE_CONTEXT_EVENT_LIMIT)
       .map((event) => ({ at: event.occurredAt, speaker: event.actor.displayName, text: event.text }));
     const compactScene = {
@@ -213,7 +218,10 @@ export class CinderBrain {
         overlapAtStart: scene.current.metadata.overlapAtStart === true,
       },
       recentVoice,
-      participants: scene.activeVoiceParticipants.map((person) => person.displayName),
+      participants: scene.activeVoiceParticipants.map((person) => ({
+        name: person.displayName,
+        roles: person.roles ?? [],
+      })),
       memories: scene.relevantMemories.slice(0, 4).map((memory) => memory.content),
       attention: attention ?? null,
     };
@@ -401,16 +409,7 @@ export class CinderBrain {
   }
 
   private forcedVoiceTool(scene: Scene): 'discord_join_voice' | 'discord_leave_voice' | undefined {
-    if (scene.current.platform !== 'discord_text' && scene.current.platform !== 'discord_voice') return undefined;
-    if (scene.current.metadata.verified !== true) return undefined;
-    const text = scene.current.text.toLocaleLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-    const leave = /\b(?:leave|exit|disconnect|drop|bounce)\b.{0,32}\b(?:voice|vc)\b/.test(text)
-      || /\b(?:voice|vc)\b.{0,32}\b(?:leave|exit|disconnect)\b/.test(text)
-      || (scene.current.platform === 'discord_voice' && /\b(?:you can|cinder|go ahead)\b.{0,24}\bleave\b/.test(text));
-    if (leave) return 'discord_leave_voice';
-    const join = /\b(?:join|enter|connect|hop)\b.{0,40}\b(?:voice|vc|lobby)\b/.test(text)
-      || /\b(?:voice|vc|lobby)\b.{0,40}\b(?:join|enter|connect)\b/.test(text);
-    return join ? 'discord_join_voice' : undefined;
+    return voiceControlToolForScene(scene);
   }
 
   private async createResponseWithRateLimitRetry(
@@ -535,6 +534,7 @@ export class CinderBrain {
           });
 
           if (call.name === 'stay_silent' && result.ok) silent = true;
+          if (call.name === 'discord_leave_voice' && result.ok && options.scene.current.platform === 'discord_voice') silent = true;
 
           input.push({
             type: 'function_call_output',
