@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { pcmToWav } from '../src/voice/wav.js';
+import { wavDurationSeconds } from '../src/voice/manager.js';
 
 describe('pcmToWav', () => {
   it('writes a valid PCM WAV header', () => {
@@ -10,5 +11,10 @@ describe('pcmToWav', () => {
     expect(wav.subarray(36, 40).toString()).toBe('data');
     expect(wav.readUInt32LE(40)).toBe(pcm.length);
     expect(wav.length).toBe(pcm.length + 44);
+  });
+
+  it('measures generated WAV duration for TTS cost accounting', () => {
+    const wav = pcmToWav(Buffer.alloc(48_000 * 2 * 2));
+    expect(wavDurationSeconds(wav)).toBe(1);
   });
 });

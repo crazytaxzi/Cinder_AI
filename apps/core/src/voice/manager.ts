@@ -60,6 +60,20 @@ export function transformImpVoice(audio: Buffer, speed: number, pitch: number): 
   return transformed;
 }
 
+export function wavDurationSeconds(wav: Buffer): number | undefined {
+  if (wav.length < 44 || wav.toString('ascii', 0, 4) !== 'RIFF' || wav.toString('ascii', 8, 12) !== 'WAVE') return undefined;
+  const byteRate = wav.readUInt32LE(28);
+  if (!byteRate) return undefined;
+  let offset = 12;
+  while (offset + 8 <= wav.length) {
+    const name = wav.toString('ascii', offset, offset + 4);
+    const size = wav.readUInt32LE(offset + 4);
+    if (name === 'data') return size / byteRate;
+    offset += 8 + size + (size % 2);
+  }
+  return undefined;
+}
+
 export class VoiceManager {
   private readonly sessions = new Map<string, VoiceSession>();
   private readonly captures = new Set<string>();
@@ -209,7 +223,26 @@ export class VoiceManager {
     }
 
     const synthesisStartedAt = Date.now();
-    const audio = await this.synthesizeWithPersistentPiper(text);
+    let synthesisSource: 'cloud' | 'local' = 'local';
+    let audio: Buffer;
+    if (this.config.CINDER_VOICE_CLOUD_TTS) {
+      try {
+        audio = await this.synthesizeWithOpenAI(text);
+        synthesisSource = 'cloud';
+        const durationSeconds = wavDurationSeconds(audio) ?? Math.max(0.5, text.length / 15);
+        await this.audioUsageRecorder?.recordAudioUsage({
+          model: this.config.OPENAI_TTS_MODEL,
+          durationSeconds,
+          estimatedCostUsd: durationSeconds / 60 * this.config.CINDER_VOICE_CLOUD_TTS_USD_PER_MINUTE,
+          platform: 'discord_voice_tts',
+        }).catch((error) => this.logger.warn({ err: error }, 'Failed to record voice synthesis usage'));
+      } catch (error) {
+        this.logger.warn({ err: error, guildId }, 'Cloud voice synthesis failed; using local Piper fallback');
+        audio = await this.synthesizeWithPersistentPiper(text);
+      }
+    } else {
+      audio = await this.synthesizeWithPersistentPiper(text);
+    }
     const transformed = transformImpVoice(
       audio,
       this.config.CINDER_VOICE_SPEED,
@@ -222,7 +255,7 @@ export class VoiceManager {
     this.clearInterruptionTimers(session);
     session.speechInterrupted = false;
     session.player.play(resource);
-    this.logger.info({ guildId, characters: text.length, elapsedMs: Date.now() - synthesisStartedAt }, 'Voice reply synthesized and playback started');
+    this.logger.info({ guildId, characters: text.length, synthesisSource, elapsedMs: Date.now() - synthesisStartedAt }, 'Voice reply synthesized and playback started');
     this.resetIdleTimer(session);
     try {
       await entersState(session.player, AudioPlayerStatus.Idle, 120_000);
@@ -254,6 +287,17 @@ export class VoiceManager {
       });
       this.piperWorker!.stdin.write(`${JSON.stringify({ id, text, outputPath })}\n`);
     });
+  }
+
+  private async synthesizeWithOpenAI(text: string): Promise<Buffer> {
+    const response = await this.openai.audio.speech.create({
+      model: this.config.OPENAI_TTS_MODEL,
+      voice: this.config.OPENAI_TTS_VOICE,
+      input: text,
+      instructions: this.config.OPENAI_TTS_INSTRUCTIONS,
+      response_format: 'wav',
+    });
+    return Buffer.from(await response.arrayBuffer());
   }
 
   private ensurePiperWorker(): void {
