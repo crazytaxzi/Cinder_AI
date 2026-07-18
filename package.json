@@ -1,0 +1,32 @@
+{
+  "name": "cinder-native",
+  "version": "2.0.0",
+  "private": true,
+  "description": "One continuous Cinder intelligence for Discord, Twitch, voice, Windows, and remote administration, hosted natively with systemd.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "npm run build --workspace=@cinder/shared && npm run build --workspace=@cinder/core && npm run build --workspace=@cinder/windows-bridge",
+    "clean": "npm run clean --workspaces --if-present",
+    "dev": "npm run dev --workspace=@cinder/core",
+    "start": "npm run start --workspace=@cinder/core",
+    "test": "npm run build --workspace=@cinder/shared && npm run test --workspaces --if-present",
+    "typecheck": "npm run build --workspace=@cinder/shared && npm run typecheck --workspace=@cinder/core && npm run typecheck --workspace=@cinder/windows-bridge",
+    "verify": "bash scripts/verify-native.sh",
+    "eval": "node scripts/validate-evals.mjs",
+    "package:windows": "bash scripts/package-windows-bridge.sh",
+    "selftest": "node apps/core/dist/cli.js self-test",
+    "verify:live": "node apps/core/dist/cli.js verify-live"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.21",
+    "tsx": "4.19.4",
+    "typescript": "5.8.3",
+    "vitest": "3.2.7"
+  }
+}

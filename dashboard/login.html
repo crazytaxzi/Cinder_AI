@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cinder Admin</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body class="login-page">
+  <main class="login-card">
+    <div class="sigil">C</div>
+    <p class="eyebrow">REMOTE SHOULDER DEMON ACCESS</p>
+    <h1>Cinder Admin</h1>
+    <p class="muted">One mind. One dashboard. Consider the buttons carefully. Some of them have teeth.</p>
+    <form id="login-form">
+      <label for="password">Dashboard password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+      <button type="submit" class="primary">Unlock dashboard</button>
+      <p id="login-error" class="error hidden"></p>
+    </form>
+  </main>
+  <script>
+    const form = document.getElementById('login-form');
+    const error = document.getElementById('login-error');
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      error.classList.add('hidden');
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        body: JSON.stringify({password: document.getElementById('password').value})
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        error.textContent = body.error || 'Login failed.';
+        error.classList.remove('hidden');
+        return;
+      }
+      sessionStorage.setItem('cinder_csrf', body.csrf);
+      location.href = '/';
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ $EUID -ne 0 ]]; then exec sudo "$0" "$@"; fi
+source /opt/cinder/current/scripts/native-lib.sh
+
+command="${1:-status}"
+case "$command" in
+  status)
+    systemctl --no-pager --full status cinder.service || true
+    port="$(env_get PORT)"; port="${port:-3100}"
+    echo
+    curl -fsS "http://127.0.0.1:${port}/health/ready" | python3 -m json.tool
+    ;;
+  start|stop|restart)
+    sudo systemctl "$command" cinder.service
+    [[ "$command" == stop ]] || { wait_ready 180 || { journalctl -u cinder.service -n 160 --no-pager; exit 1; }; }
+    ;;
+  logs)
+    journalctl -u cinder.service -n "${2:-200}" --no-pager
+    ;;
+  follow)
+    journalctl -u cinder.service -f
+    ;;
+  self-test)
+    control_post /internal/self-test | python3 -m json.tool
+    ;;
+  verify-live)
+    control_post /internal/verify-live | tee /tmp/cinder-live-verification.json | python3 -m json.tool
+    python3 - <<'PY'
+import json
+with open('/tmp/cinder-live-verification.json') as f: report=json.load(f)
+raise SystemExit(0 if report.get('ok') else 1)
+PY
+    ;;
+  backup)
+    exec /opt/cinder/current/scripts/backup-native.sh
+    ;;
+  expose)
+    exec sudo /opt/cinder/current/scripts/expose-dashboard.sh
+    ;;
+  dashboard-password)
+    read -rsp 'New Cinder dashboard password: ' first; echo
+    read -rsp 'Repeat password: ' second; echo
+    [[ -n "$first" && "$first" == "$second" ]] || fail 'Passwords were empty or did not match.'
+    hash="$("$NODE" "$CINDER_CURRENT/apps/core/dist/cli.js" hash-password "$first")"
+    python3 - "$CINDER_ENV" "$hash" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1]); h=sys.argv[2]
+lines=p.read_text().splitlines(); out=[]; found=False
+for line in lines:
+    if line.startswith('DASHBOARD_ADMIN_PASSWORD_HASH='):
+        out.append('DASHBOARD_ADMIN_PASSWORD_HASH='+h); found=True
+    else: out.append(line)
+if not found: out.append('DASHBOARD_ADMIN_PASSWORD_HASH='+h)
+p.write_text('\n'.join(out)+'\n')
+PY
+    sudo chown root:cinder "$CINDER_ENV"; sudo chmod 640 "$CINDER_ENV"
+    sudo systemctl restart cinder.service
+    wait_ready 180 || fail 'Cinder failed after changing the dashboard password.'
+    say 'Dashboard password changed.'
+    ;;
+  url)
+    port="$(env_get PORT)"; port="${port:-3100}"
+    if command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
+      name="$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("Self",{}).get("DNSName","").rstrip("."))' 2>/dev/null || true)"
+      [[ -n "$name" ]] && echo "https://${name}/" || echo "http://127.0.0.1:${port}/"
+    else
+      echo "http://127.0.0.1:${port}/"
+    fi
+    ;;
+  *)
+    cat <<'EOF'
+Usage: cinderctl <command>
+  status                 Service and readiness
+  logs [lines]           Recent exact logs
+  follow                  Follow live logs
+  start|stop|restart      Service control
+  self-test               Full real OpenAI tool-set test
+  verify-live             Discord chat, admin action, and Twitch verification
+  backup                  Database and configuration backup
+  expose                  Configure remote dashboard access
+  dashboard-password      Change dashboard password
+  url                     Show likely dashboard URL
+EOF
+    exit 2
+    ;;
+esac

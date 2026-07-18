@@ -1,0 +1,21 @@
+{
+  "name": "@cinder/shared",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "node -e \"console.log('Shared package is type-only; build verification passed.')\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

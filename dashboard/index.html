@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cinder Admin</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="sigil small">C</div>
+      <div>
+        <p class="eyebrow">SENTI'S SHOULDER DEMON</p>
+        <h1>Cinder Admin</h1>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span id="connection-pill" class="pill neutral">Connecting</span>
+      <button id="refresh-button" class="ghost">Refresh</button>
+      <button id="logout-button" class="ghost">Log out</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" aria-label="Dashboard sections">
+      <button class="nav-button active" data-view="overview">Overview</button>
+      <button class="nav-button" data-view="command">Command Cinder</button>
+      <button class="nav-button" data-view="approvals">Approvals <span id="approval-count" class="count">0</span></button>
+      <button class="nav-button" data-view="actions">Actions</button>
+      <button class="nav-button" data-view="events">Conversation</button>
+      <button class="nav-button" data-view="failures">Failures <span id="failure-count" class="count danger">0</span></button>
+      <button class="nav-button" data-view="memory">Memory</button>
+      <button class="nav-button" data-view="identities">Identities</button>
+      <button class="nav-button" data-view="configuration">Configuration</button>
+      <button class="nav-button" data-view="verification">Verification</button>
+    </nav>
+
+    <main class="content">
+      <section id="view-overview" class="view active">
+        <div class="section-heading">
+          <div><p class="eyebrow">CURRENT STATE</p><h2>Overview</h2></div>
+          <div class="button-row">
+            <button id="pause-button" class="warning">Pause thinking</button>
+            <button id="resume-button" class="success">Resume</button>
+            <button id="restart-button" class="danger-button">Restart service</button>
+          </div>
+        </div>
+        <div id="status-grid" class="status-grid"></div>
+        <div class="grid two">
+          <article class="panel">
+            <h3>Runtime</h3>
+            <div id="runtime-details" class="detail-list"></div>
+          </article>
+          <article class="panel">
+            <h3>Stored records</h3>
+            <div id="stat-details" class="detail-list"></div>
+          </article>
+        </div>
+        <article class="panel">
+          <h3>OpenAI tokens and estimated cost</h3>
+          <div id="usage-summary" class="status-grid"></div>
+          <div id="usage-details" class="detail-list"></div>
+          <p id="usage-note" class="muted"></p>
+        </article>
+      </section>
+
+      <section id="view-command" class="view">
+        <div class="section-heading"><div><p class="eyebrow">DIRECT LINE</p><h2>Command Cinder</h2></div></div>
+        <article class="panel command-panel">
+          <p class="muted">Speak naturally. This enters the same Cinder mind as Discord and Twitch, with your verified owner and moderator context.</p>
+          <label for="command-channel">Discord channel ID or name, optional</label>
+          <select id="command-channel"><option value="">No specific Discord channel</option></select>
+          <label for="command-text">Request</label>
+          <textarea id="command-text" rows="6" placeholder="Check the server layout and clean up anything obviously abandoned."></textarea>
+          <button id="command-send" class="primary">Send to Cinder</button>
+          <pre id="command-result" class="result-box">No command sent yet.</pre>
+        </article>
+      </section>
+
+      <section id="view-approvals" class="view">
+        <div class="section-heading"><div><p class="eyebrow">DECISIONS WAITING</p><h2>Approvals</h2></div></div>
+        <div id="approvals-list" class="stack"></div>
+      </section>
+
+      <section id="view-actions" class="view">
+        <div class="section-heading"><div><p class="eyebrow">WHAT HIS HANDS DID</p><h2>Actions</h2></div></div>
+        <div id="actions-list" class="stack"></div>
+      </section>
+
+      <section id="view-events" class="view">
+        <div class="section-heading">
+          <div><p class="eyebrow">WHAT HE HEARD</p><h2>Conversation</h2></div>
+          <select id="event-platform">
+            <option value="">All platforms</option>
+            <option value="discord_text">Discord text</option>
+            <option value="discord_voice">Discord voice</option>
+            <option value="twitch_chat">Twitch chat</option>
+            <option value="twitch_event">Twitch events</option>
+            <option value="windows">Dashboard / Windows</option>
+          </select>
+        </div>
+        <div id="events-list" class="stack"></div>
+      </section>
+
+      <section id="view-failures" class="view">
+        <div class="section-heading"><div><p class="eyebrow">NO MORE LOOSE WIRES</p><h2>Exact failures</h2></div></div>
+        <div id="failures-list" class="stack"></div>
+      </section>
+
+      <section id="view-memory" class="view">
+        <div class="section-heading"><div><p class="eyebrow">THINGS HE KEPT</p><h2>Memory</h2></div></div>
+        <div id="memory-list" class="stack"></div>
+      </section>
+
+      <section id="view-identities" class="view">
+        <div class="section-heading"><div><p class="eyebrow">WHO IS WHO</p><h2>Identities</h2></div></div>
+        <article class="panel compact-form">
+          <h3>Link two known accounts</h3>
+          <div class="grid four">
+            <input id="link-source-platform" placeholder="discord">
+            <input id="link-source-id" placeholder="source user ID">
+            <input id="link-target-platform" placeholder="twitch">
+            <input id="link-target-id" placeholder="target user ID">
+          </div>
+          <button id="link-identities" class="primary">Link identities</button>
+        </article>
+        <div id="identities-list" class="stack"></div>
+      </section>
+
+      <section id="view-configuration" class="view">
+        <div class="section-heading"><div><p class="eyebrow">BEHAVIOR WITHOUT ID GOBBLEDYGOOK</p><h2>Configuration</h2></div></div>
+        <article class="panel compact-form">
+          <label for="moderator-role">Moderator role name</label>
+          <select id="moderator-role"></select>
+          <label for="voice-role">Voice invitation role name</label>
+          <select id="voice-role"></select>
+          <label for="admin-channel">Optional approval channel</label>
+          <select id="admin-channel"><option value="">No special approval channel</option></select>
+          <label for="quiet-channels">Channels where Cinder should not listen</label>
+          <select id="quiet-channels" multiple size="7"></select>
+          <label for="memory-excluded">Channels that should not become long-term memory</label>
+          <select id="memory-excluded" multiple size="7"></select>
+          <button id="save-config" class="primary">Save configuration</button>
+          <p id="config-result" class="muted"></p>
+        </article>
+      </section>
+
+      <section id="view-verification" class="view">
+        <div class="section-heading"><div><p class="eyebrow">PROVE IT BEFORE CLAIMING IT</p><h2>Verification</h2></div></div>
+        <div class="grid two">
+          <article class="panel">
+            <h3>Full OpenAI tool-set test</h3>
+            <p class="muted">Sends every real tool schema to OpenAI, forces a harmless tool call, parses the call, returns the tool result, and requires a final response.</p>
+            <button id="self-test-button" class="primary">Run full-tool self-test</button>
+            <pre id="self-test-result" class="result-box">Not run from this session.</pre>
+          </article>
+          <article class="panel">
+            <h3>Live platform verification</h3>
+            <p class="muted">Creates temporary Discord channels, verifies chat, executes and cleans up a harmless admin action, and sends a Twitch verification reply.</p>
+            <button id="live-test-button" class="warning">Run live verification</button>
+            <pre id="live-test-result" class="result-box">Not run from this session.</pre>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/assets/app.js" type="module"></script>
+</body>
+</html>
