@@ -23,6 +23,11 @@ jobs:
           node-version: '22'
           cache: npm
 
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg
+
       - name: Install locked dependencies
         run: npm ci --ignore-scripts=false
 
