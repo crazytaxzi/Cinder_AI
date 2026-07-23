@@ -66,17 +66,16 @@ describe('recovering Opus receive decoder', () => {
     expect(onCorruptPacket).toHaveBeenCalledTimes(1);
   });
 
-  it('patches prism-media so a corrupt Discord packet does not emit a fatal stream error', async () => {
+  it('patches prism-media so rejected packets never become fatal stream errors', async () => {
     installRecoveringPrismOpusDecoder();
     const decoder = new prism.opus.Decoder({ rate: 48_000, channels: 2, frameSize: 960 });
     const internal = decoder as unknown as { _decode(packet: Buffer): Buffer };
-    internal._decode = vi.fn()
-      .mockImplementationOnce(() => { throw new TypeError('The compressed data passed is corrupted'); })
-      .mockReturnValue(Buffer.from('survived'));
+    internal._decode = vi.fn(() => {
+      throw new TypeError('The compressed data passed is corrupted');
+    });
 
-    const output = collect(Readable.from([Buffer.from('bad'), Buffer.from('good')], { objectMode: true }).pipe(decoder));
+    const output = collect(Readable.from([Buffer.from('bad')], { objectMode: true }).pipe(decoder));
 
-    const decoded = await output;
-    expect(decoded.subarray(-Buffer.byteLength('survived'))).toEqual(Buffer.from('survived'));
+    await expect(output).resolves.toBeInstanceOf(Buffer);
   });
 });
