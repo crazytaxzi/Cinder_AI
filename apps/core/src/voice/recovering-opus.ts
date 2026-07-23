@@ -25,7 +25,7 @@ interface RecoverablePrismDecoder extends Transform {
 }
 
 interface DecoderState {
-  fallback?: OpusPacketDecoder;
+  fallback: OpusPacketDecoder | undefined;
   fallbackActive: boolean;
   cleaned: boolean;
 }
@@ -151,7 +151,7 @@ export function installRecoveringPrismOpusDecoder(): void {
     callback: TransformCallback,
   ): void {
     const packet = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    const state = states.get(this) ?? { fallbackActive: false, cleaned: false };
+    const state = states.get(this) ?? { fallback: undefined, fallbackActive: false, cleaned: false };
     states.set(this, state);
 
     const ensureFallback = (): OpusPacketDecoder => {
