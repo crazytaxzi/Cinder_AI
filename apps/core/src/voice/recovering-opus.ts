@@ -3,7 +3,7 @@ import { Transform, type TransformCallback } from 'node:stream';
 import prism from 'prism-media';
 
 const require = createRequire(import.meta.url);
-const PATCH_FLAG = Symbol.for('cinder.recovering-prism-opus');
+const patchedPrototypes = new WeakSet<object>();
 
 interface OpusPacketDecoder {
   decode(packet: Buffer): Buffer | Uint8Array;
@@ -21,7 +21,6 @@ interface OpusScriptModule {
 
 interface RecoverablePrismDecoder extends Transform {
   _decode(packet: Buffer): Buffer;
-  [PATCH_FLAG]?: boolean;
 }
 
 interface DecoderState {
@@ -141,10 +140,10 @@ export class RecoveringOpusDecoder extends Transform {
  */
 export function installRecoveringPrismOpusDecoder(): void {
   const prototype = prism.opus.Decoder.prototype as unknown as RecoverablePrismDecoder;
-  if (prototype[PATCH_FLAG]) return;
+  if (patchedPrototypes.has(prototype)) return;
 
   const states = new WeakMap<RecoverablePrismDecoder, DecoderState>();
-  prototype[PATCH_FLAG] = true;
+  patchedPrototypes.add(prototype);
   prototype._transform = function recoveringTransform(
     chunk: Buffer,
     _encoding: BufferEncoding,
