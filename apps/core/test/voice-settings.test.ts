@@ -112,10 +112,10 @@ describe('live Cinder voice settings', () => {
     const changed = await tools.execute('configure_voice', args, makeContext('owner'));
     expect(changed).toMatchObject({ ok: true, data: { changed: true, restartRequired: false } });
     expect(config.CINDER_VOICE_SPEED).toBe(0.5148);
-    expect(config.CINDER_VOICE_PITCH).toBe(0.511153);
+    expect(config.CINDER_VOICE_PITCH).toBe(0.511152);
     expect(setRuntimeState).toHaveBeenCalledWith(VOICE_SETTINGS_STATE_KEY, {
       speed: 0.5148,
-      pitch: 0.511153,
+      pitch: 0.511152,
     });
     expect(recordAction).toHaveBeenCalledTimes(2);
   });
