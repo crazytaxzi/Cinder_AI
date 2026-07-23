@@ -29,7 +29,7 @@ function makeScene(platform: EventEnvelope['platform']): Scene {
       id: `${platform}:event`,
       platform,
       occurredAt: new Date().toISOString(),
-      serverId: platform.startsWith('discord') ? 'guild' : undefined,
+      ...(platform.startsWith('discord') ? { serverId: 'guild' } : {}),
       channelId: platform.startsWith('twitch') ? 'broadcaster' : 'general',
       actor: {
         platform: platform.startsWith('twitch') ? 'twitch' : 'discord',
