@@ -35,6 +35,15 @@ jobs:
       - name: Type-check workspaces
         run: npm run typecheck
 
+      - name: Test Opus decoder recovery
+        run: npm run test --workspace=@cinder/core -- test/recovering-opus.test.ts
+
+      - name: Test voice receive reconnect policy
+        run: npm run test --workspace=@cinder/core -- test/voice-receive-recovery.test.ts
+
+      - name: Test voice recovery configuration
+        run: npm run test --workspace=@cinder/core -- test/config.test.ts
+
       - name: Run automated tests
         run: npm test
 
