@@ -1,7 +1,9 @@
 import { createRequire } from 'node:module';
 import { Transform, type TransformCallback } from 'node:stream';
+import prism from 'prism-media';
 
 const require = createRequire(import.meta.url);
+const PATCH_FLAG = Symbol.for('cinder.recovering-prism-opus');
 
 interface OpusPacketDecoder {
   decode(packet: Buffer): Buffer;
@@ -9,6 +11,11 @@ interface OpusPacketDecoder {
 
 interface NativeOpusModule {
   OpusEncoder: new (rate: number, channels: number) => OpusPacketDecoder;
+}
+
+interface RecoverablePrismDecoder extends Transform {
+  _decode(packet: Buffer): Buffer;
+  [PATCH_FLAG]?: boolean;
 }
 
 export interface RecoveringOpusDecoderOptions {
@@ -24,9 +31,9 @@ function createNativeDecoder(rate: number, channels: number): OpusPacketDecoder 
 }
 
 /**
+ * Packet-level decoder used by tests and by callers that want explicit control.
  * Discord receive streams emit one Opus packet per chunk. A single malformed
- * packet must not poison the entire utterance, so decode packets independently
- * and drop only the bad packet while preserving decoder state for the rest.
+ * packet must not poison the entire utterance.
  */
 export class RecoveringOpusDecoder extends Transform {
   readonly decoder: OpusPacketDecoder;
@@ -53,3 +60,29 @@ export class RecoveringOpusDecoder extends Transform {
     callback();
   }
 }
+
+/**
+ * Cinder already constructs prism-media decoders inside VoiceManager. Patch the
+ * decoder once at process startup so one invalid Discord packet is discarded
+ * instead of emitting an error that kills the entire speaker utterance.
+ */
+export function installRecoveringPrismOpusDecoder(): void {
+  const prototype = prism.opus.Decoder.prototype as unknown as RecoverablePrismDecoder;
+  if (prototype[PATCH_FLAG]) return;
+
+  prototype[PATCH_FLAG] = true;
+  prototype._transform = function recoveringTransform(
+    chunk: Buffer,
+    _encoding: BufferEncoding,
+    callback: TransformCallback,
+  ): void {
+    try {
+      callback(null, this._decode(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    } catch (error) {
+      this.emit('corruptPacket', error, Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk));
+      callback();
+    }
+  };
+}
+
+installRecoveringPrismOpusDecoder();
