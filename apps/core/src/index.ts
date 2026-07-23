@@ -13,6 +13,7 @@ import { SceneAssembler } from './scene/assembler.js';
 import { CinderRuntime } from './cinder/runtime.js';
 import { AdminServer } from './admin/server.js';
 import { LiveVerifier } from './verification/live.js';
+import { restorePersistedVoiceSettings } from './voice/settings.js';
 import type { EventEnvelope } from '@cinder/shared';
 
 async function main(): Promise<void> {
@@ -37,6 +38,7 @@ async function main(): Promise<void> {
     : undefined;
   const bridge = config.BRIDGE_ENABLED ? new BridgeServer(config, logger) : undefined;
   const tools = new PlatformAwareToolRegistry(database, config, logger, discord, twitch, bridge);
+  await restorePersistedVoiceSettings(database, config, logger);
   const brain = new CinderBrain(config, logger, tools, database);
   await brain.initialize();
 
