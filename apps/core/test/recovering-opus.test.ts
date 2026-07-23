@@ -17,15 +17,42 @@ async function collect(stream: NodeJS.ReadableStream): Promise<Buffer> {
 }
 
 describe('recovering Opus receive decoder', () => {
-  it('drops one malformed packet and continues decoding the utterance', async () => {
+  it('switches to the JavaScript fallback when native Opus rejects a packet', async () => {
+    const onFallback = vi.fn();
+    const native = { decode: vi.fn(() => { throw new TypeError('The compressed data passed is corrupted'); }) };
+    const fallback = { decode: vi.fn(() => Buffer.from('fallback-pcm')) };
+    const decoder = new RecoveringOpusDecoder({
+      decoder: native,
+      fallbackDecoder: fallback,
+      onFallback,
+    });
+
+    const output = collect(Readable.from([Buffer.from('packet')], { objectMode: true }).pipe(decoder));
+
+    await expect(output).resolves.toEqual(Buffer.from('fallback-pcm'));
+    expect(native.decode).toHaveBeenCalledTimes(1);
+    expect(fallback.decode).toHaveBeenCalledTimes(1);
+    expect(decoder.fallbackPackets).toBe(1);
+    expect(decoder.droppedPackets).toBe(0);
+    expect(onFallback).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops only packets rejected by both decoders and continues the utterance', async () => {
     const onCorruptPacket = vi.fn();
-    let calls = 0;
+    let nativeCalls = 0;
+    let fallbackCalls = 0;
     const decoder = new RecoveringOpusDecoder({
       decoder: {
         decode: () => {
-          calls += 1;
-          if (calls === 1) throw new TypeError('The compressed data passed is corrupted');
+          nativeCalls += 1;
+          if (nativeCalls === 1) throw new TypeError('native rejected packet');
           return Buffer.from('decoded-pcm');
+        },
+      },
+      fallbackDecoder: {
+        decode: () => {
+          fallbackCalls += 1;
+          throw new TypeError('fallback rejected packet');
         },
       },
       onCorruptPacket,
@@ -34,6 +61,7 @@ describe('recovering Opus receive decoder', () => {
     const output = collect(Readable.from([Buffer.from('bad'), Buffer.from('good')], { objectMode: true }).pipe(decoder));
 
     await expect(output).resolves.toEqual(Buffer.from('decoded-pcm'));
+    expect(fallbackCalls).toBe(1);
     expect(decoder.droppedPackets).toBe(1);
     expect(onCorruptPacket).toHaveBeenCalledTimes(1);
   });
@@ -48,6 +76,7 @@ describe('recovering Opus receive decoder', () => {
 
     const output = collect(Readable.from([Buffer.from('bad'), Buffer.from('good')], { objectMode: true }).pipe(decoder));
 
-    await expect(output).resolves.toEqual(Buffer.from('survived'));
+    const decoded = await output;
+    expect(decoded.subarray(-Buffer.byteLength('survived'))).toEqual(Buffer.from('survived'));
   });
 });
