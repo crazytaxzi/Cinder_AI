@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import './voice/recovering-opus.js';
 import { loadConfig } from './config/env.js';
 import { createLogger } from './config/logger.js';
 import { Database } from './db/database.js';
