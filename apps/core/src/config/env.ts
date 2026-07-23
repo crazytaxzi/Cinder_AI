@@ -59,6 +59,9 @@ const schema = z.object({
   DISCORD_VOICE_MAX_UTTERANCE_SECONDS: z.coerce.number().int().min(5).max(120).default(45),
   DISCORD_VOICE_SILENCE_PADDING_FRAMES: z.coerce.number().int().min(5).max(50).default(20),
   DISCORD_VOICE_BARGE_IN_GRACE_MS: z.coerce.number().int().min(0).max(3000).default(450),
+  DISCORD_VOICE_DAVE_ENCRYPTION: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  DISCORD_VOICE_DECRYPTION_FAILURE_TOLERANCE: z.coerce.number().int().min(1).max(100).default(3),
+  DISCORD_VOICE_RECEIVE_RECOVERY_COOLDOWN_MS: z.coerce.number().int().min(1_000).max(120_000).default(15_000),
 
   TWITCH_ENABLED: booleanString,
   TWITCH_CLIENT_ID: z.string().optional(),
