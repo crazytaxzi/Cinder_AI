@@ -23,5 +23,48 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Run complete native verification gate
-        run: npm run verify
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts=false
+
+      - name: Clean generated output
+        run: npm run clean
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --omit=optional --audit-level=high
+
+      - name: Type-check workspaces
+        run: npm run typecheck
+
+      - name: Run automated tests
+        run: npm test
+
+      - name: Build production workspaces
+        run: npm run build
+
+      - name: Validate behavioral evaluations
+        run: npm run eval
+
+      - name: Package Windows bridge
+        run: npm run package:windows
+
+      - name: Validate migrations and scripts
+        shell: bash
+        run: |
+          if grep -Eiq '^\s*(BEGIN|COMMIT);' migrations/*.sql; then
+            echo 'Migration files may not wrap themselves in transactions.' >&2
+            exit 1
+          fi
+          for file in scripts/*.sh; do bash -n "$file"; done
+          bash -n scripts/cinderctl
+          python3 -m py_compile scripts/native_env.py scripts/piper-worker.py
+
+      - name: Validate dashboard production assets
+        shell: bash
+        run: |
+          test -s dashboard/index.html
+          test -s dashboard/login.html
+          test -s dashboard/app.js
+          test -s dashboard/styles.css
+          grep -q '/api/verify-live' dashboard/app.js
+          grep -q 'Exact failures' dashboard/index.html
+          grep -q 'native dashboard static assets' apps/core/test/dashboard-static.test.ts
