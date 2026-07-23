@@ -1,0 +1,102 @@
+name: Cinder Verification
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts=false
+
+      - name: Clean generated output
+        run: npm run clean
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --omit=optional --audit-level=high
+
+      - name: Type-check workspaces
+        run: npm run typecheck
+
+      - name: Test Opus decoder recovery
+        run: npm run test --workspace=@cinder/core -- test/recovering-opus.test.ts
+
+      - name: Test voice receive reconnect policy
+        run: npm run test --workspace=@cinder/core -- test/voice-receive-recovery.test.ts
+
+      - name: Test voice recovery configuration
+        run: npm run test --workspace=@cinder/core -- test/config.test.ts
+
+      - name: Run core test suite
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test --workspace=@cinder/core 2>&1 | tee core-test.log
+
+      - name: Upload core test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-test-log
+          path: core-test.log
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Run Windows bridge test suite
+        run: npm run test --workspace=@cinder/windows-bridge
+
+      - name: Run shared package test
+        run: npm run test --workspace=@cinder/shared
+
+      - name: Build production workspaces
+        run: npm run build
+
+      - name: Validate behavioral evaluations
+        run: npm run eval
+
+      - name: Package Windows bridge
+        run: npm run package:windows
+
+      - name: Validate migrations and scripts
+        shell: bash
+        run: |
+          if grep -Eiq '^\s*(BEGIN|COMMIT);' migrations/*.sql; then
+            echo 'Migration files may not wrap themselves in transactions.' >&2
+            exit 1
+          fi
+          for file in scripts/*.sh; do bash -n "$file"; done
+          bash -n scripts/cinderctl
+          python3 -m py_compile scripts/native_env.py scripts/piper-worker.py
+
+      - name: Validate dashboard production assets
+        shell: bash
+        run: |
+          test -s dashboard/index.html
+          test -s dashboard/login.html
+          test -s dashboard/app.js
+          test -s dashboard/styles.css
+          grep -q '/api/verify-live' dashboard/app.js
+          grep -q 'Exact failures' dashboard/index.html
+          grep -q 'native dashboard static assets' apps/core/test/dashboard-static.test.ts

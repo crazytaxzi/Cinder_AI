@@ -22,12 +22,25 @@ describe('loadConfig', () => {
     expect(config.DEFAULT_MODERATOR_ROLE_NAME).toBe('Moderator');
     expect(config.DISCORD_VOICE_SILENCE_PADDING_FRAMES).toBe(20);
     expect(config.DISCORD_VOICE_BARGE_IN_GRACE_MS).toBe(450);
+    expect(config.DISCORD_VOICE_DAVE_ENCRYPTION).toBe(false);
+    expect(config.DISCORD_VOICE_DECRYPTION_FAILURE_TOLERANCE).toBe(3);
+    expect(config.DISCORD_VOICE_RECEIVE_RECOVERY_COOLDOWN_MS).toBe(15_000);
     expect(config.CINDER_MAX_TOOL_ROUNDS).toBe(3);
     expect(config.CINDER_MAX_OUTPUT_TOKENS).toBe(600);
     expect(config.CINDER_VOICE_SPEED).toBe(0.468);
     expect(config.CINDER_VOICE_PITCH).toBe(0.538055352);
     expect(config.CINDER_VOICE_CLOUD_TTS).toBe(true);
     expect(config.OPENAI_TTS_INSTRUCTIONS).toContain('gravelly');
+  });
+
+  it('can explicitly enable DAVE after the receive path is verified', () => {
+    const config = loadConfig({
+      ...base,
+      DISCORD_VOICE_DAVE_ENCRYPTION: 'true',
+      DISCORD_VOICE_DECRYPTION_FAILURE_TOLERANCE: '8',
+    });
+    expect(config.DISCORD_VOICE_DAVE_ENCRYPTION).toBe(true);
+    expect(config.DISCORD_VOICE_DECRYPTION_FAILURE_TOLERANCE).toBe(8);
   });
 
   it('requires both Twitch identities when Twitch is enabled', () => {

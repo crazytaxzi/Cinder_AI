@@ -33,6 +33,7 @@ import type { Config } from '../config/env.js';
 import type { Logger } from '../config/logger.js';
 import { pcmToWav } from './wav.js';
 import { pcmHasSpeechEnergy, sanitizeVoiceTranscript } from './input-quality.js';
+import { shouldRecoverVoiceReceive } from './receive-recovery.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -82,6 +83,8 @@ export function wavDurationSeconds(wav: Buffer): number | undefined {
 export class VoiceManager {
   private readonly sessions = new Map<string, VoiceSession>();
   private readonly captures = new Set<string>();
+  private readonly receiveRecoveries = new Set<string>();
+  private readonly lastReceiveRecoveryAt = new Map<string, number>();
   private readonly openai: OpenAI;
   private localTranscriptionTail: Promise<void> = Promise.resolve();
   private piperWorker: ChildProcessWithoutNullStreams | undefined;
@@ -139,7 +142,19 @@ export class VoiceManager {
       adapterCreator: guild.voiceAdapterCreator,
       selfDeaf: false,
       selfMute: false,
+      // Cinder consumes speech for transcription. The current discord.js DAVE
+      // receive path has produced sender-specific undecodable Opus payloads in
+      // production, so use the stable non-DAVE transport unless explicitly enabled.
+      daveEncryption: this.config.DISCORD_VOICE_DAVE_ENCRYPTION,
+      decryptionFailureTolerance: this.config.DISCORD_VOICE_DECRYPTION_FAILURE_TOLERANCE,
+      debug: this.config.LOG_LEVEL === 'debug' || this.config.LOG_LEVEL === 'trace',
     });
+
+    if (this.config.LOG_LEVEL === 'debug' || this.config.LOG_LEVEL === 'trace') {
+      connection.on('debug', (message) => {
+        this.logger.debug({ guildId: guild.id, voiceDebug: message }, 'Discord voice connection debug');
+      });
+    }
 
     const player = createAudioPlayer({
       behaviors: { noSubscriber: NoSubscriberBehavior.Pause },
@@ -197,6 +212,12 @@ export class VoiceManager {
 
     await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
     this.resetIdleTimer(session);
+    this.logger.info({
+      guildId: guild.id,
+      channelId: channel.id,
+      daveEncryption: this.config.DISCORD_VOICE_DAVE_ENCRYPTION,
+      decryptionFailureTolerance: this.config.DISCORD_VOICE_DECRYPTION_FAILURE_TOLERANCE,
+    }, 'Discord voice receiver ready');
     return { ok: true, summary: `Joined voice channel ${channel.name}.`, data: { channelId: channel.id } };
   }
 
@@ -364,6 +385,39 @@ export class VoiceManager {
     }, this.config.DISCORD_VOICE_IDLE_MINUTES * 60_000);
   }
 
+  private async recoverVoiceReceive(
+    guild: Guild,
+    session: VoiceSession,
+    userId: string,
+    corruptPackets: number,
+    fallbackPackets: number,
+  ): Promise<void> {
+    if (this.sessions.get(guild.id) !== session || this.receiveRecoveries.has(guild.id)) return;
+    const channel = guild.channels.cache.get(session.channelId);
+    if (!channel?.isVoiceBased()) return;
+
+    this.receiveRecoveries.add(guild.id);
+    this.lastReceiveRecoveryAt.set(guild.id, Date.now());
+    try {
+      this.logger.warn({
+        guildId: guild.id,
+        channelId: session.channelId,
+        userId,
+        corruptPackets,
+        fallbackPackets,
+      }, 'Rebuilding Discord voice session after repeated receive decode failures');
+      await this.leave(guild.id);
+      await new Promise((resolve) => setTimeout(resolve, 750));
+      const result = await this.join(guild, channel);
+      if (!result.ok) throw new Error(result.summary);
+      this.logger.info({ guildId: guild.id, channelId: channel.id, userId }, 'Discord voice receive session rebuilt');
+    } catch (error) {
+      this.logger.error({ err: error, guildId: guild.id, channelId: session.channelId, userId }, 'Discord voice receive recovery failed');
+    } finally {
+      this.receiveRecoveries.delete(guild.id);
+    }
+  }
+
   private async captureUtterance(guild: Guild, session: VoiceSession, userId: string): Promise<void> {
     const key = `${guild.id}:${userId}`;
     if (this.captures.has(key)) return;
@@ -377,7 +431,33 @@ export class VoiceManager {
       const decoder = new prism.opus.Decoder({ rate: 48_000, channels: 2, frameSize: 960 });
       const chunks: Buffer[] = [];
       let total = 0;
+      let corruptPackets = 0;
+      let fallbackPackets = 0;
       const maxBytes = 48_000 * 2 * 2 * this.config.DISCORD_VOICE_MAX_UTTERANCE_SECONDS;
+
+      decoder.on('decoderFallback', (error: unknown, packetLength: number) => {
+        fallbackPackets += 1;
+        this.logger.warn({
+          err: error,
+          guildId: guild.id,
+          userId,
+          packetLength,
+          fallbackPackets,
+        }, 'Native Opus decode failed; switched this utterance to the JavaScript decoder');
+      });
+      decoder.on('decoderRecovered', (packetLength: number) => {
+        this.logger.debug({ guildId: guild.id, userId, packetLength }, 'Native Opus decoder recovered during utterance');
+      });
+      decoder.on('corruptPacket', (error: unknown, packetLength: number) => {
+        corruptPackets += 1;
+        this.logger.warn({
+          err: error,
+          guildId: guild.id,
+          userId,
+          packetLength,
+          corruptPackets,
+        }, 'Dropped a Discord voice packet rejected by both Opus decoders');
+      });
 
       const completion = new Promise<void>((resolve, reject) => {
         decoder.on('data', (chunk: Buffer) => {
@@ -397,8 +477,27 @@ export class VoiceManager {
       opusStream.pipe(decoder);
       await completion;
       const pcm = Buffer.concat(chunks);
+      const now = Date.now();
+      const lastRecoveryAt = this.lastReceiveRecoveryAt.get(guild.id) ?? 0;
+      if (shouldRecoverVoiceReceive({
+        corruptPackets,
+        decodedBytes: pcm.length,
+        lastRecoveryAt,
+        now,
+        cooldownMs: this.config.DISCORD_VOICE_RECEIVE_RECOVERY_COOLDOWN_MS,
+      })) {
+        await this.recoverVoiceReceive(guild, session, userId, corruptPackets, fallbackPackets);
+        return;
+      }
+
       if (!pcmHasSpeechEnergy(pcm)) {
-        this.logger.debug({ guildId: guild.id, userId, total }, 'Discarded silence or a receiver noise fragment before transcription');
+        this.logger.debug({
+          guildId: guild.id,
+          userId,
+          total,
+          corruptPackets,
+          fallbackPackets,
+        }, 'Discarded silence or a receiver noise fragment before transcription');
         return;
       }
 
@@ -438,8 +537,14 @@ export class VoiceManager {
       if (this.sessions.get(guild.id) !== session) return;
 
       this.logger.info({
-        guildId: guild.id, userId, transcriptionSource, durationSeconds,
-        elapsedMs: Date.now() - transcriptionStartedAt, characters: text.length,
+        guildId: guild.id,
+        userId,
+        transcriptionSource,
+        durationSeconds,
+        elapsedMs: Date.now() - transcriptionStartedAt,
+        characters: text.length,
+        corruptPackets,
+        fallbackPackets,
       }, 'Voice utterance transcribed');
       await this.emitEvent(this.buildVoiceEvent(guild, session, member, text, transcriptionSource));
     } catch (error) {
