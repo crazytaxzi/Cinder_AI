@@ -5,7 +5,7 @@ import { Database } from './db/database.js';
 import { DiscordAdapter } from './adapters/discord.js';
 import { TwitchAdapter } from './adapters/twitch.js';
 import { BridgeServer } from './adapters/bridge-server.js';
-import { ToolRegistry } from './tools/registry.js';
+import { PlatformAwareToolRegistry } from './tools/platform-aware-registry.js';
 import { CinderBrain } from './cinder/brain.js';
 import { TurnQueue } from './cinder/turn-queue.js';
 import { CompositeStateProvider } from './scene/composite-state.js';
@@ -36,7 +36,7 @@ async function main(): Promise<void> {
     ? new TwitchAdapter(config, logger, database, (event) => eventSink(event))
     : undefined;
   const bridge = config.BRIDGE_ENABLED ? new BridgeServer(config, logger) : undefined;
-  const tools = new ToolRegistry(database, config, logger, discord, twitch, bridge);
+  const tools = new PlatformAwareToolRegistry(database, config, logger, discord, twitch, bridge);
   const brain = new CinderBrain(config, logger, tools, database);
   await brain.initialize();
 
